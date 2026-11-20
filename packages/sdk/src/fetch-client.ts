@@ -929,6 +929,8 @@ export type AlbumResponseDto = {
     id: string;
     /** Activity feed enabled */
     isActivityEnabled: boolean;
+    /** Album is in the locked folder */
+    isLocked: boolean;
     /** Last modified asset timestamp */
     lastModifiedAssetTimestamp?: string;
     order?: AssetOrder;
@@ -953,6 +955,8 @@ export type CreateAlbumDto = {
     assetIds?: string[];
     /** Album description */
     description?: string | null;
+    /** Create the album in the locked folder */
+    isLocked?: boolean;
 };
 export type AlbumsAddAssetsDto = {
     /** Album IDs */
@@ -982,6 +986,8 @@ export type UpdateAlbumDto = {
     description?: string | null;
     /** Enable activity feed */
     isActivityEnabled?: boolean;
+    /** Move the album into (true) or out of (false) the locked folder. Only the album owner can change this, and an elevated session is required. */
+    isLocked?: boolean;
     order?: AssetOrder;
 };
 export type BulkIdsDto = {
@@ -2054,6 +2060,14 @@ export type PartnerCreateDto = {
 export type PartnerUpdateDto = {
     /** Show partner assets in timeline */
     inTimeline: boolean;
+};
+export type PartnerLockedAssetsDto = {
+    /** Locked asset IDs */
+    assetIds: string[];
+};
+export type PartnerLockedAssetsResponseDto = {
+    /** Locked asset IDs visible to the partner */
+    assetIds: string[];
 };
 export type PasskeyResponseDto = {
     /** Creation date */
@@ -3500,6 +3514,8 @@ export type SyncAlbumV2 = {
     id: string;
     /** Is activity enabled */
     isActivityEnabled: boolean;
+    /** Is locked album */
+    isLocked: boolean;
     /** Album name */
     name: string;
     order: AssetOrder;
@@ -3893,6 +3909,22 @@ export type SyncMemoryV2 = {
     updatedAt: string;
 };
 export type SyncPartnerDeleteV1 = {
+    /** Shared by ID */
+    sharedById: string;
+    /** Shared with ID */
+    sharedWithId: string;
+};
+export type SyncPartnerLockedAssetDeleteV1 = {
+    /** Asset ID */
+    assetId: string;
+    /** Shared by ID */
+    sharedById: string;
+    /** Shared with ID */
+    sharedWithId: string;
+};
+export type SyncPartnerLockedAssetV1 = {
+    /** Asset ID */
+    assetId: string;
     /** Shared by ID */
     sharedById: string;
     /** Shared with ID */
@@ -4528,9 +4560,10 @@ export function getUserStatisticsAdmin({ id, isFavorite, isTrashed, visibility }
 /**
  * List all albums
  */
-export function getAllAlbums({ assetId, id, isOwned, isShared, name }: {
+export function getAllAlbums({ assetId, id, isLocked, isOwned, isShared, name }: {
     assetId?: string;
     id?: string;
+    isLocked?: boolean;
     isOwned?: boolean;
     isShared?: boolean;
     name?: string;
@@ -4541,6 +4574,7 @@ export function getAllAlbums({ assetId, id, isOwned, isShared, name }: {
     }>(`/albums${QS.query(QS.explode({
         assetId,
         id,
+        isLocked,
         isOwned,
         isShared,
         name
@@ -6267,6 +6301,45 @@ export function updatePartner({ id, partnerUpdateDto }: {
         ...opts,
         method: "PUT",
         body: partnerUpdateDto
+    })));
+}
+/**
+ * Stop sharing locked assets with a partner
+ */
+export function removePartnerLockedAssets({ id, partnerLockedAssetsDto }: {
+    id: string;
+    partnerLockedAssetsDto: PartnerLockedAssetsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/partners/${encodeURIComponent(id)}/locked-assets`, oazapfts.json({
+        ...opts,
+        method: "DELETE",
+        body: partnerLockedAssetsDto
+    })));
+}
+/**
+ * Retrieve locked assets shared with a partner
+ */
+export function getPartnerLockedAssets({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: PartnerLockedAssetsResponseDto;
+    }>(`/partners/${encodeURIComponent(id)}/locked-assets`, {
+        ...opts
+    }));
+}
+/**
+ * Share locked assets with a partner
+ */
+export function addPartnerLockedAssets({ id, partnerLockedAssetsDto }: {
+    id: string;
+    partnerLockedAssetsDto: PartnerLockedAssetsDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchText(`/partners/${encodeURIComponent(id)}/locked-assets`, oazapfts.json({
+        ...opts,
+        method: "PUT",
+        body: partnerLockedAssetsDto
     })));
 }
 /**
@@ -8829,6 +8902,8 @@ export enum SyncEntityType {
     PartnerStackBackfillV1 = "PartnerStackBackfillV1",
     PartnerStackDeleteV1 = "PartnerStackDeleteV1",
     PartnerStackV1 = "PartnerStackV1",
+    PartnerLockedAssetV1 = "PartnerLockedAssetV1",
+    PartnerLockedAssetDeleteV1 = "PartnerLockedAssetDeleteV1",
     AlbumV1 = "AlbumV1",
     AlbumV2 = "AlbumV2",
     AlbumDeleteV1 = "AlbumDeleteV1",
@@ -8898,7 +8973,8 @@ export enum SyncRequestType {
     AssetFacesV1 = "AssetFacesV1",
     AssetFacesV2 = "AssetFacesV2",
     AssetFacesV3 = "AssetFacesV3",
-    UserMetadataV1 = "UserMetadataV1"
+    UserMetadataV1 = "UserMetadataV1",
+    PartnerLockedAssetsV1 = "PartnerLockedAssetsV1"
 }
 export enum AssetOrderBy {
     TakenAt = "takenAt",

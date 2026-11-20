@@ -1097,6 +1097,7 @@ export enum SyncRequestType {
   AssetFacesV2 = 'AssetFacesV2',
   AssetFacesV3 = 'AssetFacesV3',
   UserMetadataV1 = 'UserMetadataV1',
+  PartnerLockedAssetsV1 = 'PartnerLockedAssetsV1',
 }
 
 export const SyncRequestTypeSchema = z
@@ -1138,6 +1139,8 @@ export enum SyncEntityType {
   PartnerStackBackfillV1 = 'PartnerStackBackfillV1',
   PartnerStackDeleteV1 = 'PartnerStackDeleteV1',
   PartnerStackV1 = 'PartnerStackV1',
+  PartnerLockedAssetV1 = 'PartnerLockedAssetV1',
+  PartnerLockedAssetDeleteV1 = 'PartnerLockedAssetDeleteV1',
 
   AlbumV1 = 'AlbumV1',
   AlbumV2 = 'AlbumV2',

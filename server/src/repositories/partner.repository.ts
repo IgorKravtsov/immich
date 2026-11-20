@@ -3,7 +3,7 @@ import type { ExpressionBuilder, Insertable, Kysely, NotNull, Updateable } from 
 import { jsonObjectFrom } from 'kysely/helpers/postgres';
 import { InjectKysely } from 'nestjs-kysely';
 import { columns } from 'src/database.js';
-import { DummyValue, GenerateSql } from 'src/decorators.js';
+import { Chunked, DummyValue, GenerateSql } from 'src/decorators.js';
 import { DB } from 'src/schema/index.js';
 import { PartnerTable } from 'src/schema/tables/partner.table.js';
 
@@ -75,6 +75,69 @@ export class PartnerRepository {
       .where('sharedWithId', '=', sharedWithId)
       .where('sharedById', '=', sharedById)
       .execute();
+  }
+
+  @GenerateSql({ params: [{ sharedWithId: DummyValue.UUID, sharedById: DummyValue.UUID }] })
+  async getLockedAssetIds({ sharedWithId, sharedById }: PartnerIds): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom('partner_locked_asset')
+      .select('assetId')
+      .where('sharedById', '=', sharedById)
+      .where('sharedWithId', '=', sharedWithId)
+      .orderBy('createdAt', 'asc')
+      .execute();
+    return rows.map(({ assetId }) => assetId);
+  }
+
+  async addLockedAssets({ sharedWithId, sharedById }: PartnerIds, assetIds: string[]): Promise<void> {
+    if (assetIds.length === 0) {
+      return;
+    }
+
+    await this.db
+      .insertInto('partner_locked_asset')
+      .values(assetIds.map((assetId) => ({ sharedById, sharedWithId, assetId })))
+      .onConflict((oc) => oc.doNothing())
+      .execute();
+  }
+
+  async removeLockedAssets({ sharedWithId, sharedById }: PartnerIds, assetIds?: string[]): Promise<void> {
+    if (assetIds?.length === 0) {
+      return;
+    }
+
+    await this.db
+      .deleteFrom('partner_locked_asset')
+      .where('sharedById', '=', sharedById)
+      .where('sharedWithId', '=', sharedWithId)
+      .$if(!!assetIds, (qb) => qb.where('assetId', 'in', assetIds!))
+      .execute();
+  }
+
+  @GenerateSql({ params: [[DummyValue.UUID]] })
+  @Chunked()
+  async removeLockedAssetsForAll(assetIds: string[]): Promise<void> {
+    if (assetIds.length === 0) {
+      return;
+    }
+
+    await this.db.deleteFrom('partner_locked_asset').where('assetId', 'in', assetIds).execute();
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID, [DummyValue.UUID]] })
+  async getLockedAssetPartnerIds(sharedById: string, assetIds: string[]): Promise<string[]> {
+    if (assetIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.db
+      .selectFrom('partner_locked_asset')
+      .select('sharedWithId')
+      .distinct()
+      .where('sharedById', '=', sharedById)
+      .where('assetId', 'in', assetIds)
+      .execute();
+    return rows.map(({ sharedWithId }) => sharedWithId);
   }
 
   private builder() {

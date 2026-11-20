@@ -66,6 +66,7 @@ export const SYNC_TYPES_ORDER = [
   SyncRequestType.PartnerAssetsV1,
   SyncRequestType.PartnerAssetsV2,
   SyncRequestType.PartnerStacksV1,
+  SyncRequestType.PartnerLockedAssetsV1,
   SyncRequestType.AlbumAssetsV1,
   SyncRequestType.AlbumAssetsV2,
   SyncRequestType.AlbumsV1,
@@ -180,6 +181,7 @@ export class SyncService extends BaseService {
       [SyncRequestType.AuthUsersV2]: () => this.syncAuthUsersV2(options, response, checkpointMap),
       [SyncRequestType.UsersV1]: () => this.syncUsersV1(options, response, checkpointMap),
       [SyncRequestType.PartnersV1]: () => this.syncPartnersV1(options, response, checkpointMap),
+      [SyncRequestType.PartnerLockedAssetsV1]: () => this.syncPartnerLockedAssetsV1(options, response, checkpointMap),
       [SyncRequestType.AssetsV2]: () => this.syncAssetsV2(options, response, checkpointMap),
       [SyncRequestType.AssetExifsV1]: () => this.syncAssetExifsV1(options, response, checkpointMap),
       [SyncRequestType.AssetEditsV1]: () => this.syncAssetEditsV1(options, response, checkpointMap),
@@ -235,6 +237,7 @@ export class SyncService extends BaseService {
     await this.syncRepository.memory.cleanupAuditTable(pruneThreshold);
     await this.syncRepository.memoryToAsset.cleanupAuditTable(pruneThreshold);
     await this.syncRepository.partner.cleanupAuditTable(pruneThreshold);
+    await this.syncRepository.partnerLockedAsset.cleanupAuditTable(pruneThreshold);
     await this.syncRepository.person.cleanupAuditTable(pruneThreshold);
     await this.syncRepository.personGroup.cleanupAuditTable(pruneThreshold);
     await this.syncRepository.stack.cleanupAuditTable(pruneThreshold);
@@ -305,6 +308,24 @@ export class SyncService extends BaseService {
 
     const upsertType = SyncEntityType.PartnerV1;
     const upserts = this.syncRepository.partner.getUpserts({ ...options, ack: checkpointMap[upsertType] });
+    for await (const { updateId, ...data } of upserts) {
+      await send(response, { type: upsertType, ids: [updateId], data });
+    }
+  }
+
+  private async syncPartnerLockedAssetsV1(
+    options: SyncQueryOptions,
+    response: Writable,
+    checkpointMap: CheckpointMap,
+  ) {
+    const deleteType = SyncEntityType.PartnerLockedAssetDeleteV1;
+    const deletes = this.syncRepository.partnerLockedAsset.getDeletes({ ...options, ack: checkpointMap[deleteType] });
+    for await (const { id, ...data } of deletes) {
+      await send(response, { type: deleteType, ids: [id], data });
+    }
+
+    const upsertType = SyncEntityType.PartnerLockedAssetV1;
+    const upserts = this.syncRepository.partnerLockedAsset.getUpserts({ ...options, ack: checkpointMap[upsertType] });
     for await (const { updateId, ...data } of upserts) {
       await send(response, { type: upsertType, ids: [updateId], data });
     }

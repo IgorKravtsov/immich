@@ -2360,6 +2360,15 @@
             }
           },
           {
+            "description": "Filter by locked status: true = only locked albums (requires an elevated session), false or undefined = only regular albums",
+            "in": "query",
+            "name": "isLocked",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "description": "Filter by ownership: true = only owned, false = only shared-with-me, undefined = no filter",
             "in": "query",
             "name": "isOwned",
@@ -9871,6 +9880,164 @@
         ],
         "x-immich-permission": "partner.update",
         "x-immich-state": "Stable"
+      }
+    },
+    "/partners/{id}/locked-assets": {
+      "delete": {
+        "description": "Stop the given partner from seeing these locked assets. Requires an elevated session.",
+        "operationId": "removePartnerLockedAssets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerLockedAssetsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Stop sharing locked assets with a partner",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "state": "Added",
+            "version": "v3.4.0"
+          }
+        ],
+        "x-immich-permission": "partner.update"
+      },
+      "get": {
+        "description": "Retrieve the IDs of locked assets that the given partner is allowed to see. Requires an elevated session.",
+        "operationId": "getPartnerLockedAssets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PartnerLockedAssetsResponseDto"
+                }
+              }
+            },
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Retrieve locked assets shared with a partner",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "state": "Added",
+            "version": "v3.4.0"
+          }
+        ],
+        "x-immich-permission": "partner.read"
+      },
+      "put": {
+        "description": "Allow the given partner to see these locked assets in their locked folder. Requires an elevated session.",
+        "operationId": "addPartnerLockedAssets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PartnerLockedAssetsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          },
+          {
+            "cookie": []
+          },
+          {
+            "api_key": []
+          }
+        ],
+        "summary": "Share locked assets with a partner",
+        "tags": [
+          "Partners"
+        ],
+        "x-immich-history": [
+          {
+            "state": "Added",
+            "version": "v3.4.0"
+          }
+        ],
+        "x-immich-permission": "partner.update"
       }
     },
     "/passkeys": {
@@ -20439,6 +20606,10 @@
             "description": "Activity feed enabled",
             "type": "boolean"
           },
+          "isLocked": {
+            "description": "Album is in the locked folder",
+            "type": "boolean"
+          },
           "lastModifiedAssetTimestamp": {
             "description": "Last modified asset timestamp",
             "format": "date-time",
@@ -20472,6 +20643,7 @@
           "hasSharedLink",
           "id",
           "isActivityEnabled",
+          "isLocked",
           "shared",
           "updatedAt"
         ],
@@ -22495,6 +22667,10 @@
                 "version": "v3"
               }
             ]
+          },
+          "isLocked": {
+            "description": "Create the album in the locked folder",
+            "type": "boolean"
           }
         },
         "required": [
@@ -25649,6 +25825,41 @@
           "shared-with"
         ],
         "type": "string"
+      },
+      "PartnerLockedAssetsDto": {
+        "properties": {
+          "assetIds": {
+            "description": "Locked asset IDs",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetIds"
+        ],
+        "type": "object"
+      },
+      "PartnerLockedAssetsResponseDto": {
+        "properties": {
+          "assetIds": {
+            "description": "Locked asset IDs visible to the partner",
+            "items": {
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "assetIds"
+        ],
+        "type": "object"
       },
       "PartnerResponseDto": {
         "description": "Partner response",
@@ -31594,6 +31805,10 @@
             "description": "Is activity enabled",
             "type": "boolean"
           },
+          "isLocked": {
+            "description": "Is locked album",
+            "type": "boolean"
+          },
           "name": {
             "description": "Album name",
             "type": "string"
@@ -31621,6 +31836,7 @@
           "description",
           "id",
           "isActivityEnabled",
+          "isLocked",
           "name",
           "order",
           "thumbnailAssetId",
@@ -32837,6 +33053,8 @@
           "PartnerStackBackfillV1",
           "PartnerStackDeleteV1",
           "PartnerStackV1",
+          "PartnerLockedAssetV1",
+          "PartnerLockedAssetDeleteV1",
           "AlbumV1",
           "AlbumV2",
           "AlbumDeleteV1",
@@ -33168,6 +33386,62 @@
         ],
         "type": "object"
       },
+      "SyncPartnerLockedAssetDeleteV1": {
+        "properties": {
+          "assetId": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "sharedById": {
+            "description": "Shared by ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "sharedWithId": {
+            "description": "Shared with ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "sharedById",
+          "sharedWithId"
+        ],
+        "type": "object"
+      },
+      "SyncPartnerLockedAssetV1": {
+        "properties": {
+          "assetId": {
+            "description": "Asset ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "sharedById": {
+            "description": "Shared by ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          },
+          "sharedWithId": {
+            "description": "Shared with ID",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "assetId",
+          "sharedById",
+          "sharedWithId"
+        ],
+        "type": "object"
+      },
       "SyncPartnerV1": {
         "properties": {
           "inTimeline": {
@@ -33320,7 +33594,8 @@
           "AssetFacesV1",
           "AssetFacesV2",
           "AssetFacesV3",
-          "UserMetadataV1"
+          "UserMetadataV1",
+          "PartnerLockedAssetsV1"
         ],
         "type": "string"
       },
@@ -34103,6 +34378,10 @@
           },
           "isActivityEnabled": {
             "description": "Enable activity feed",
+            "type": "boolean"
+          },
+          "isLocked": {
+            "description": "Move the album into (true) or out of (false) the locked folder. Only the album owner can change this, and an elevated session is required.",
             "type": "boolean"
           },
           "order": {

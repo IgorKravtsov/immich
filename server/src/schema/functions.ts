@@ -107,6 +107,19 @@ export const partner_delete_audit = registerFunction({
     END`,
 });
 
+export const partner_locked_asset_delete_audit = registerFunction({
+  name: 'partner_locked_asset_delete_audit',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    BEGIN
+      INSERT INTO partner_locked_asset_audit ("sharedById", "sharedWithId", "assetId")
+      SELECT "sharedById", "sharedWithId", "assetId"
+      FROM OLD;
+      RETURN NULL;
+    END`,
+});
+
 export const asset_delete_audit = registerFunction({
   name: 'asset_delete_audit',
   returnType: 'TRIGGER',

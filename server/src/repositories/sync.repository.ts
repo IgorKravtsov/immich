@@ -71,6 +71,7 @@ export class SyncRepository {
   partnerAsset: PartnerAssetsSync;
   partnerAssetExif: PartnerAssetExifsSync;
   partnerStack: PartnerStackSync;
+  partnerLockedAsset: PartnerLockedAssetSync;
   person: PersonSync;
   personGroup: PersonGroupSync;
   stack: StackSync;
@@ -96,6 +97,7 @@ export class SyncRepository {
     this.partnerAsset = new PartnerAssetsSync(this.db);
     this.partnerAssetExif = new PartnerAssetExifsSync(this.db);
     this.partnerStack = new PartnerStackSync(this.db);
+    this.partnerLockedAsset = new PartnerLockedAssetSync(this.db);
     this.person = new PersonSync(this.db);
     this.personGroup = new PersonGroupSync(this.db);
     this.stack = new StackSync(this.db);
@@ -223,6 +225,7 @@ class AlbumSync extends BaseSync {
         'album.albumThumbnailAssetId as thumbnailAssetId',
         'album.isActivityEnabled',
         'album.order',
+        'album.isLocked',
         'album.updateId',
       ])
       .stream();
@@ -687,6 +690,28 @@ class PartnerSync extends BaseSync {
     return this.upsertQuery('partner', options)
       .select(['sharedById', 'sharedWithId', 'inTimeline', 'updateId'])
       .where((eb) => eb.or([eb('sharedById', '=', userId), eb('sharedWithId', '=', userId)]))
+      .stream();
+  }
+}
+
+class PartnerLockedAssetSync extends BaseSync {
+  @GenerateSql({ params: [dummyQueryOptions], stream: true })
+  getDeletes(options: SyncQueryOptions) {
+    return this.auditQuery('partner_locked_asset_audit', options)
+      .select(['id', 'sharedById', 'sharedWithId', 'assetId'])
+      .where('sharedWithId', '=', options.userId)
+      .stream();
+  }
+
+  cleanupAuditTable(daysAgo: number) {
+    return this.auditCleanup('partner_locked_asset_audit', daysAgo);
+  }
+
+  @GenerateSql({ params: [dummyQueryOptions], stream: true })
+  getUpserts(options: SyncQueryOptions) {
+    return this.upsertQuery('partner_locked_asset', options)
+      .select(['sharedById', 'sharedWithId', 'assetId', 'updateId'])
+      .where('sharedWithId', '=', options.userId)
       .stream();
   }
 }

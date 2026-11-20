@@ -22,3 +22,11 @@ export class PartnerSearchDto extends createZodDto({
 }) {}
 
 export class PartnerResponseDto extends createZodDto(PartnerResponseSchema) {}
+
+export class PartnerLockedAssetsDto extends createZodDto({
+  assetIds: z.array(z.uuidv4()).min(1).describe('Locked asset IDs'),
+}) {}
+
+export class PartnerLockedAssetsResponseDto extends createZodDto({
+  assetIds: z.array(z.uuidv4()).describe('Locked asset IDs visible to the partner'),
+}) {}

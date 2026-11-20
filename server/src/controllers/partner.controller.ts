@@ -2,7 +2,14 @@ import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, 
 import { ApiTags } from '@nestjs/swagger';
 import { Endpoint, HistoryBuilder } from 'src/decorators.js';
 import type { AuthDto } from 'src/dtos/auth.dto.js';
-import { PartnerCreateDto, PartnerResponseDto, PartnerSearchDto, PartnerUpdateDto } from 'src/dtos/partner.dto.js';
+import {
+  PartnerCreateDto,
+  PartnerLockedAssetsDto,
+  PartnerLockedAssetsResponseDto,
+  PartnerResponseDto,
+  PartnerSearchDto,
+  PartnerUpdateDto,
+} from 'src/dtos/partner.dto.js';
 import { ApiTag, Permission } from 'src/enum.js';
 import { Auth, Authenticated } from 'src/middleware/auth.guard.js';
 import { PartnerService } from 'src/services/partner.service.js';
@@ -59,6 +66,49 @@ export class PartnerController {
     @Body() dto: PartnerUpdateDto,
   ): Promise<PartnerResponseDto> {
     return this.service.update(auth, id, dto);
+  }
+
+  @Get(':id/locked-assets')
+  @Authenticated({ permission: Permission.PartnerRead })
+  @Endpoint({
+    summary: 'Retrieve locked assets shared with a partner',
+    description: 'Retrieve the IDs of locked assets that the given partner is allowed to see. Requires an elevated session.',
+    history: new HistoryBuilder().added('v3.4.0'),
+  })
+  getPartnerLockedAssets(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<PartnerLockedAssetsResponseDto> {
+    return this.service.getLockedAssets(auth, id);
+  }
+
+  @Put(':id/locked-assets')
+  @Authenticated({ permission: Permission.PartnerUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Share locked assets with a partner',
+    description: 'Allow the given partner to see these locked assets in their locked folder. Requires an elevated session.',
+    history: new HistoryBuilder().added('v3.4.0'),
+  })
+  addPartnerLockedAssets(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: PartnerLockedAssetsDto,
+  ): Promise<void> {
+    return this.service.addLockedAssets(auth, id, dto);
+  }
+
+  @Delete(':id/locked-assets')
+  @Authenticated({ permission: Permission.PartnerUpdate })
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @Endpoint({
+    summary: 'Stop sharing locked assets with a partner',
+    description: 'Stop the given partner from seeing these locked assets. Requires an elevated session.',
+    history: new HistoryBuilder().added('v3.4.0'),
+  })
+  removePartnerLockedAssets(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: PartnerLockedAssetsDto,
+  ): Promise<void> {
+    return this.service.removeLockedAssets(auth, id, dto);
   }
 
   @Delete(':id')

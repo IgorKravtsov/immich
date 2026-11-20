@@ -21,6 +21,7 @@ import {
   memory_asset_delete_audit,
   memory_delete_audit,
   partner_delete_audit,
+  partner_locked_asset_delete_audit,
   person_delete_audit,
   person_group_delete_audit,
   stack_delete_audit,
@@ -66,6 +67,8 @@ import { NaturalEarthCountriesTable } from 'src/schema/tables/natural-earth-coun
 import { NotificationTable } from 'src/schema/tables/notification.table.js';
 import { OcrSearchTable } from 'src/schema/tables/ocr-search.table.js';
 import { PartnerAuditTable } from 'src/schema/tables/partner-audit.table.js';
+import { PartnerLockedAssetAuditTable } from 'src/schema/tables/partner-locked-asset-audit.table.js';
+import { PartnerLockedAssetTable } from 'src/schema/tables/partner-locked-asset.table.js';
 import { PartnerTable } from 'src/schema/tables/partner.table.js';
 import { PasskeyTable } from 'src/schema/tables/passkey.table.js';
 import { PersonAuditTable } from 'src/schema/tables/person-audit.table.js';
@@ -142,6 +145,8 @@ export class ImmichDatabase {
     OcrSearchTable,
     PartnerAuditTable,
     PartnerTable,
+    PartnerLockedAssetTable,
+    PartnerLockedAssetAuditTable,
     PasskeyTable,
     PersonTable,
     PersonAuditTable,
@@ -181,6 +186,7 @@ export class ImmichDatabase {
     ll_to_earth_public,
     user_delete_audit,
     partner_delete_audit,
+    partner_locked_asset_delete_audit,
     asset_delete_audit,
     album_user_after_insert,
     album_user_delete_audit,
@@ -267,6 +273,8 @@ export interface DB {
 
   partner: PartnerTable;
   partner_audit: PartnerAuditTable;
+  partner_locked_asset: PartnerLockedAssetTable;
+  partner_locked_asset_audit: PartnerLockedAssetAuditTable;
 
   passkey: PasskeyTable;
 

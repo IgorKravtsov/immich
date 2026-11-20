@@ -69,6 +69,20 @@ class SyncPartnerDeleteV1 extends createZodDto({
 }) {}
 
 @ExtraModel()
+class SyncPartnerLockedAssetV1 extends createZodDto({
+  sharedById: z.uuidv4().describe('Shared by ID'),
+  sharedWithId: z.uuidv4().describe('Shared with ID'),
+  assetId: z.uuidv4().describe('Asset ID'),
+}) {}
+
+@ExtraModel()
+class SyncPartnerLockedAssetDeleteV1 extends createZodDto({
+  sharedById: z.uuidv4().describe('Shared by ID'),
+  sharedWithId: z.uuidv4().describe('Shared with ID'),
+  assetId: z.uuidv4().describe('Asset ID'),
+}) {}
+
+@ExtraModel()
 export class SyncAssetV1 extends createZodDto({
   id: z.uuidv4().describe('Asset ID'),
   ownerId: z.uuidv4().describe('Owner ID'),
@@ -212,6 +226,7 @@ class SyncAlbumV2 extends createZodDto({
   thumbnailAssetId: z.string().nullable().describe('Thumbnail asset ID'),
   isActivityEnabled: z.boolean().describe('Is activity enabled'),
   order: AssetOrderSchema,
+  isLocked: z.boolean().describe('Is locked album'),
 }) {}
 
 @ExtraModel()
@@ -383,6 +398,8 @@ export type SyncItem = {
   [SyncEntityType.UserDeleteV1]: SyncUserDeleteV1;
   [SyncEntityType.PartnerV1]: SyncPartnerV1;
   [SyncEntityType.PartnerDeleteV1]: SyncPartnerDeleteV1;
+  [SyncEntityType.PartnerLockedAssetV1]: SyncPartnerLockedAssetV1;
+  [SyncEntityType.PartnerLockedAssetDeleteV1]: SyncPartnerLockedAssetDeleteV1;
   [SyncEntityType.AssetV2]: SyncAssetV2;
   [SyncEntityType.AssetDeleteV1]: SyncAssetDeleteV1;
   [SyncEntityType.AssetMetadataV1]: SyncAssetMetadataV1;
