@@ -7,6 +7,7 @@ import {
   person_user_role_enum,
 } from 'src/schema/enums.js';
 import {
+  album_asset_enforce_lock_state,
   album_user_after_insert,
   album_user_delete,
   album_user_delete_audit,
@@ -187,6 +188,7 @@ export class ImmichDatabase {
     user_delete_audit,
     partner_delete_audit,
     partner_locked_asset_delete_audit,
+    album_asset_enforce_lock_state,
     asset_delete_audit,
     album_user_after_insert,
     album_user_delete_audit,

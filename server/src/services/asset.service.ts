@@ -671,6 +671,7 @@ export class AssetService extends BaseService {
 
     if (visibility === AssetVisibility.Locked) {
       await this.albumRepository.removeAssetsFromAlbums(ids, { isLocked: false });
+      await this.sharedLinkRepository.removeAssetsFromUnprotected(ids);
       return;
     }
 

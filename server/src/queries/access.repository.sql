@@ -70,9 +70,17 @@ select
   "shared_link"."albumId"
 from
   "shared_link"
+  inner join "album" on "album"."id" = "shared_link"."albumId"
 where
   "shared_link"."id" = $1
   and "shared_link"."albumId" in ($2)
+  and (
+    "album"."isLocked" = $3
+    or (
+      "shared_link"."password" is not null
+      and "shared_link"."password" != $4
+    )
+  )
 
 -- AccessRepository.asset.checkAlbumAccess
 with
@@ -138,11 +146,15 @@ with
   "link" as (
     select
       "shared_link"."id",
-      "shared_link"."albumId"
+      "shared_link"."albumId",
+      (
+        "shared_link"."password" is not null
+        and "shared_link"."password" != $2
+      ) as "isProtected"
     from
       "shared_link"
     where
-      "shared_link"."id" = $2
+      "shared_link"."id" = $3
   )
 select
   "asset"."id",
@@ -169,10 +181,20 @@ from
     where
       "album_asset"."assetId" = "asset"."id"
     limit
-      $3
+      $4
   ) as "membership" on true
 where
   "asset"."deletedAt" is null
+  and (
+    "asset"."visibility" != 'locked'
+    or exists (
+      select
+      from
+        "link"
+      where
+        "link"."isProtected" = $5
+    )
+  )
   and (
     "asset"."id" = any ("target"."ids")
     or "asset"."livePhotoVideoId" = any ("target"."ids")

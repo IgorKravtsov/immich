@@ -322,8 +322,8 @@ export class AlbumService extends BaseService {
       events.push({ id: albumId, userIds, recipientIds });
     }
 
-    await this.albumRepository.addAssetIdsToAlbums(albumAssetValues);
     await this.lockAssets(auth, [...assetIdsToLock]);
+    await this.albumRepository.addAssetIdsToAlbums(albumAssetValues);
     for (const event of events) {
       this.resourceRepository.send({ userIds: event.userIds, changed: [Resource.album(event)] });
       await this.eventRepository.emit('AlbumUpdate', event);
@@ -460,28 +460,24 @@ export class AlbumService extends BaseService {
     albumId: string,
     assetIds: string[],
   ): Promise<BulkIdResponseDto[]> {
-    const existingAssetIds = await this.albumRepository.getAssetIds(albumId, assetIds);
-    const ownedAssetIds = await this.accessRepository.asset.checkOwnerAccess(
-      auth.user.id,
-      new Set(assetIds.filter((assetId) => !existingAssetIds.has(assetId))),
-      true,
-    );
+    const ownedAssetIds = await this.accessRepository.asset.checkOwnerAccess(auth.user.id, new Set(assetIds), true);
+    const existingAssetIds = await this.albumRepository.getAssetIds(albumId, [...ownedAssetIds]);
 
     const results: BulkIdResponseDto[] = [];
     const addedAssetIds = new Set<string>();
     for (const assetId of assetIds) {
-      if (existingAssetIds.has(assetId) || addedAssetIds.has(assetId)) {
+      if (!ownedAssetIds.has(assetId)) {
+        results.push({ id: assetId, success: false, error: BulkIdErrorReason.NO_PERMISSION });
+      } else if (existingAssetIds.has(assetId) || addedAssetIds.has(assetId)) {
         results.push({ id: assetId, success: false, error: BulkIdErrorReason.DUPLICATE });
-      } else if (ownedAssetIds.has(assetId)) {
+      } else {
         addedAssetIds.add(assetId);
         results.push({ id: assetId, success: true });
-      } else {
-        results.push({ id: assetId, success: false, error: BulkIdErrorReason.NO_PERMISSION });
       }
     }
 
-    await this.albumRepository.addAssetIds(albumId, [...addedAssetIds]);
     await this.lockAssets(auth, [...addedAssetIds]);
+    await this.albumRepository.addAssetIds(albumId, [...addedAssetIds]);
     return results;
   }
 
@@ -492,6 +488,7 @@ export class AlbumService extends BaseService {
 
     await this.assetRepository.updateAll(assetIds, { visibility: AssetVisibility.Locked });
     await this.albumRepository.removeAssetsFromAlbums(assetIds, { isLocked: false });
+    await this.sharedLinkRepository.removeAssetsFromUnprotected(assetIds);
     this.resourceRepository.send({
       userIds: [auth.user.id],
       changed: [Resource.assets(), Resource.assetStatistics(), Resource.albums(), ...ASSET_VISIBILITY_DEPENDENT_PATHS],
@@ -499,6 +496,7 @@ export class AlbumService extends BaseService {
   }
 
   private async lockAlbum(auth: AuthDto, album: MapAlbumDto) {
+    await this.albumRepository.update(album.id, { id: album.id, isLocked: true }, auth.user.id);
     const assets = await this.albumRepository.getAssetsForLockChange(album.id);
     const ownAssetIds = assets.filter(({ ownerId }) => ownerId === auth.user.id).map(({ id }) => id);
     const otherAssetIds = assets.filter(({ ownerId }) => ownerId !== auth.user.id).map(({ id }) => id);
@@ -513,6 +511,7 @@ export class AlbumService extends BaseService {
   }
 
   private async unlockAlbum(auth: AuthDto, album: MapAlbumDto) {
+    await this.albumRepository.update(album.id, { id: album.id, isLocked: false }, auth.user.id);
     const assets = await this.albumRepository.getAssetsForLockChange(album.id);
     const assetIdsToUnlock = assets
       .filter(({ ownerId, inOtherLockedAlbum }) => ownerId === auth.user.id && !inOtherLockedAlbum)

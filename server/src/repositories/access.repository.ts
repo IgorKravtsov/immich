@@ -135,9 +135,16 @@ class AlbumAccess {
 
     return this.db
       .selectFrom('shared_link')
+      .innerJoin('album', 'album.id', 'shared_link.albumId')
       .select('shared_link.albumId')
       .where('shared_link.id', '=', sharedLinkId)
       .where('shared_link.albumId', 'in', [...albumIds])
+      .where((eb) =>
+        eb.or([
+          eb('album.isLocked', '=', false),
+          eb.and([eb('shared_link.password', 'is not', null), eb('shared_link.password', '!=', '')]),
+        ]),
+      )
       .execute()
       .then(
         (sharedLinks) =>
@@ -266,6 +273,11 @@ class AssetAccess {
         qb
           .selectFrom('shared_link')
           .select(['shared_link.id', 'shared_link.albumId'])
+          .select((eb) =>
+            eb
+              .and([eb('shared_link.password', 'is not', null), eb('shared_link.password', '!=', '')])
+              .as('isProtected'),
+          )
           .where('shared_link.id', '=', sharedLinkId),
       )
       .selectFrom('asset')
@@ -293,6 +305,12 @@ class AssetAccess {
       )
       .select(['asset.id', 'asset.livePhotoVideoId'])
       .where('asset.deletedAt', 'is', null)
+      .where((eb) =>
+        eb.or([
+          eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+          eb.exists(eb.selectFrom('link').where('link.isProtected', '=', true)),
+        ]),
+      )
       .where((eb) =>
         eb.or([
           eb('asset.id', '=', eb.fn.any('target.ids')),

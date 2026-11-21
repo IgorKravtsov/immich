@@ -226,10 +226,12 @@ describe(AssetService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
       mocks.asset.update.mockResolvedValue(getForAsset(asset));
+      mocks.sharedLink.removeAssetsFromUnprotected.mockResolvedValue();
 
       await sut.update(auth, asset.id, { visibility: AssetVisibility.Locked });
 
       expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledWith([asset.id], { isLocked: false });
+      expect(mocks.sharedLink.removeAssetsFromUnprotected).toHaveBeenCalledWith([asset.id]);
       expect(mocks.partner.removeLockedAssetsForAll).not.toHaveBeenCalled();
     });
 
@@ -510,11 +512,13 @@ describe(AssetService.name, () => {
     it('should remove newly locked assets from regular albums only', async () => {
       const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+      mocks.sharedLink.removeAssetsFromUnprotected.mockResolvedValue();
 
       await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], visibility: AssetVisibility.Locked });
 
       expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledTimes(1);
       expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledWith(['asset-1', 'asset-2'], { isLocked: false });
+      expect(mocks.sharedLink.removeAssetsFromUnprotected).toHaveBeenCalledWith(['asset-1', 'asset-2']);
       expect(mocks.partner.removeLockedAssetsForAll).not.toHaveBeenCalled();
     });
 

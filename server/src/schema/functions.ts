@@ -120,6 +120,27 @@ export const partner_locked_asset_delete_audit = registerFunction({
     END`,
 });
 
+export const album_asset_enforce_lock_state = registerFunction({
+  name: 'album_asset_enforce_lock_state',
+  returnType: 'TRIGGER',
+  language: 'PLPGSQL',
+  body: `
+    DECLARE
+      album_locked boolean;
+      asset_visibility asset_visibility_enum;
+    BEGIN
+      SELECT "isLocked" INTO album_locked FROM album WHERE "id" = NEW."albumId" FOR SHARE;
+      SELECT "visibility" INTO asset_visibility FROM asset WHERE "id" = NEW."assetId" FOR SHARE;
+      IF album_locked IS NULL OR asset_visibility IS NULL THEN
+        RETURN NEW;
+      END IF;
+      IF album_locked <> (asset_visibility = 'locked') THEN
+        RETURN NULL;
+      END IF;
+      RETURN NEW;
+    END`,
+});
+
 export const asset_delete_audit = registerFunction({
   name: 'asset_delete_audit',
   returnType: 'TRIGGER',

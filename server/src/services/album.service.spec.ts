@@ -1689,6 +1689,10 @@ describe(AlbumService.name, () => {
   //   await expect(sut.removeAssets(auth, albumId, { ids: ['1'] })).rejects.toBeInstanceOf(ForbiddenException);
   // });
   describe('locked albums', () => {
+    beforeEach(() => {
+      mocks.sharedLink.removeAssetsFromUnprotected.mockResolvedValue();
+    });
+
     it('should require an elevated session to list locked albums', async () => {
       await expect(sut.getAll(AuthFactory.create(), { isLocked: true })).rejects.toBeInstanceOf(UnauthorizedException);
       await expect(sut.getAll(AuthFactory.from().session().build(), { isLocked: true })).rejects.toBeInstanceOf(
@@ -1810,6 +1814,26 @@ describe(AlbumService.name, () => {
       expect(mocks.album.addAssetIds).toHaveBeenCalledWith(album.id, [asset.id]);
       expect(mocks.asset.updateAll).toHaveBeenCalledWith([asset.id], { visibility: AssetVisibility.Locked });
       expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledWith([asset.id], { isLocked: false });
+      expect(mocks.sharedLink.removeAssetsFromUnprotected).toHaveBeenCalledWith([asset.id]);
+      expect(mocks.asset.updateAll.mock.invocationCallOrder[0]).toBeLessThan(
+        mocks.album.addAssetIds.mock.invocationCallOrder[0],
+      );
+    });
+
+    it('should not reveal whether a foreign asset is already in a locked album', async () => {
+      const owner = UserFactory.create();
+      const album = AlbumFactory.from({ isLocked: true }).owner(owner).build();
+      const foreignAssetId = newUuid();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.access.album.checkSharedAlbumAccess.mockResolvedValue(new Set());
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getAssetIds.mockResolvedValue(new Set());
+
+      await expect(sut.addAssets(AuthFactory.create(owner), album.id, { ids: [foreignAssetId] })).resolves.toEqual([
+        { id: foreignAssetId, success: false, error: BulkIdErrorReason.NO_PERMISSION },
+      ]);
+      expect(mocks.album.getAssetIds).toHaveBeenCalledWith(album.id, []);
     });
 
     it('should reject a viewer adding assets to a locked album', async () => {

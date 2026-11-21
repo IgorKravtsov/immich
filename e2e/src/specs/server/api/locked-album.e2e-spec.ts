@@ -168,6 +168,28 @@ describe('locked albums', () => {
       expect(updateStatus).toBe(400);
     });
 
+    it('should stop serving an asset through an unprotected link once it is locked', async () => {
+      const asset = await utils.createAsset(owner.accessToken);
+      const { body: link } = await request(app)
+        .post('/shared-links')
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({ type: SharedLinkType.Individual, assetIds: [asset.id] });
+
+      const before = await request(app).get(`/assets/${asset.id}`).query({ key: link.key });
+      expect(before.status).toBe(200);
+
+      await request(app)
+        .put('/assets')
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({ ids: [asset.id], visibility: AssetVisibility.Locked });
+
+      const after = await request(app).get(`/assets/${asset.id}`).query({ key: link.key });
+      expect(after.status).toBe(400);
+
+      const { body: mine } = await request(app).get('/shared-links/me').query({ key: link.key });
+      expect(mine.assets ?? []).toEqual([]);
+    });
+
     it('should require a password for links to locked assets', async () => {
       const { status } = await request(app)
         .post('/shared-links')
