@@ -11,6 +11,7 @@ import 'package:immich_mobile/domain/models/asset/asset_metadata.model.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/store.model.dart';
 import 'package:immich_mobile/domain/services/asset.service.dart';
+import 'package:immich_mobile/domain/utils/backup_visibility.dart';
 import 'package:immich_mobile/entities/store.entity.dart';
 import 'package:immich_mobile/extensions/platform_extensions.dart';
 import 'package:immich_mobile/infrastructure/repositories/backup.repository.dart';
@@ -25,7 +26,6 @@ import 'package:immich_mobile/repositories/upload.repository.dart';
 import 'package:immich_mobile/services/api.service.dart';
 import 'package:immich_mobile/utils/debug_print.dart';
 import 'package:logging/logging.dart';
-import 'package:openapi/api.dart' as api;
 import 'package:path/path.dart' as p;
 
 part 'background_upload.service.freezed.dart';
@@ -331,7 +331,12 @@ class BackgroundUploadService {
       isFavorite: asset.isFavorite,
       requiresWiFi: requiresWiFi,
       // Visibility hidden on upload to prevent the server from running regular jobs on the live photo asset
-      fields: entity.isLivePhoto ? {'visibility': api.AssetVisibility.hidden.toString()} : null,
+      fields: _visibilityFields(
+        backupUploadVisibility(
+          isLivePhotoMotion: entity.isLivePhoto,
+          isInLockedAlbum: !entity.isLivePhoto && await _backupRepository.isInLockedAlbum(asset.id),
+        ),
+      ),
       cloudId: entity.isLivePhoto ? null : asset.cloudId,
       adjustmentTime: entity.isLivePhoto ? null : asset.adjustmentTime?.toIso8601String(),
       latitude: entity.isLivePhoto ? null : asset.latitude?.toString(),
@@ -351,7 +356,15 @@ class BackgroundUploadService {
       return null;
     }
 
-    final fields = {'livePhotoVideoId': livePhotoVideoId};
+    final fields = {
+      'livePhotoVideoId': livePhotoVideoId,
+      ...?_visibilityFields(
+        backupUploadVisibility(
+          isLivePhotoMotion: false,
+          isInLockedAlbum: await _backupRepository.isInLockedAlbum(asset.id),
+        ),
+      ),
+    };
 
     final requiresWiFi = _shouldRequireWiFi(asset);
     final originalFileName = await _assetMediaRepository.getOriginalFilename(asset.id) ?? asset.name;
@@ -379,6 +392,9 @@ class BackgroundUploadService {
       longitude: asset.longitude?.toString(),
     );
   }
+
+  Map<String, String>? _visibilityFields(AssetVisibility? visibility) =>
+      visibility == null ? null : {'visibility': visibility.name};
 
   bool _shouldRequireWiFi(LocalAsset asset) {
     final backup = SettingsRepository.instance.appConfig.backup;

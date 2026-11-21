@@ -57,6 +57,7 @@ void main() {
     mockAssetService = MockAssetService();
     when(() => mockAssetService.stackEditedUpload(any(), any(), any())).thenAnswer((_) async {});
     when(() => mockBackupRepository.markIfUnsupported(any(), any())).thenAnswer((_) async => false);
+    when(() => mockBackupRepository.isInLockedAlbum(any())).thenAnswer((_) async => false);
 
     sut = BackgroundUploadService(
       mockUploadRepository,
@@ -145,6 +146,38 @@ void main() {
       expect(task!.fields.containsKey('visibility'), isFalse);
     });
 
+    test('uploads a photo from a backup album linked to a locked album as locked', () async {
+      final asset = LocalAssetStub.image1;
+      final mockEntity = MockAssetEntity();
+      final mockFile = File('/path/to/file.jpg');
+
+      when(() => mockEntity.isLivePhoto).thenReturn(false);
+      when(() => mockStorageRepository.getAssetEntityForAsset(asset)).thenAnswer((_) async => mockEntity);
+      when(() => mockStorageRepository.getFileForAsset(asset.id)).thenAnswer((_) async => mockFile);
+      when(() => mockAssetMediaRepository.getOriginalFilename(asset.id)).thenAnswer((_) async => 'Locked.jpg');
+      when(() => mockBackupRepository.isInLockedAlbum(asset.id)).thenAnswer((_) async => true);
+
+      final task = await sut.getUploadTask(asset);
+
+      expect(task!.fields['visibility'], equals('locked'));
+    });
+
+    test('keeps the motion part of a live photo in a locked album hidden', () async {
+      final asset = LocalAssetStub.image1;
+      final mockEntity = MockAssetEntity();
+      final mockFile = File('/path/to/file.mov');
+
+      when(() => mockEntity.isLivePhoto).thenReturn(true);
+      when(() => mockStorageRepository.getAssetEntityForAsset(asset)).thenAnswer((_) async => mockEntity);
+      when(() => mockStorageRepository.getMotionFileForAsset(asset)).thenAnswer((_) async => mockFile);
+      when(() => mockAssetMediaRepository.getOriginalFilename(asset.id)).thenAnswer((_) async => 'Live.HEIC');
+      when(() => mockBackupRepository.isInLockedAlbum(asset.id)).thenAnswer((_) async => true);
+
+      final task = await sut.getUploadTask(asset);
+
+      expect(task!.fields['visibility'], equals('hidden'));
+    });
+
     test('corrects the extension when iOS returns a rendered file for a .dng asset', () async {
       final asset = LocalAssetStub.image1;
       final mockEntity = MockAssetEntity();
@@ -215,6 +248,23 @@ void main() {
   });
 
   group('getLivePhotoUploadTask', () {
+    test('uploads the still of a live photo in a locked album as locked', () async {
+      final asset = LocalAssetStub.image1;
+      final mockEntity = MockAssetEntity();
+      final mockFile = File('/path/to/livephoto.heic');
+
+      when(() => mockEntity.isLivePhoto).thenReturn(true);
+      when(() => mockStorageRepository.getAssetEntityForAsset(asset)).thenAnswer((_) async => mockEntity);
+      when(() => mockStorageRepository.getFileForAsset(asset.id)).thenAnswer((_) async => mockFile);
+      when(() => mockAssetMediaRepository.getOriginalFilename(asset.id)).thenAnswer((_) async => 'Live.HEIC');
+      when(() => mockBackupRepository.isInLockedAlbum(asset.id)).thenAnswer((_) async => true);
+
+      final task = await sut.getLivePhotoUploadTask(asset, 'video-id-123');
+
+      expect(task!.fields['visibility'], equals('locked'));
+      expect(task.fields['livePhotoVideoId'], equals('video-id-123'));
+    });
+
     test('should call getOriginalFilename for live photo upload task', () async {
       final asset = LocalAssetStub.image1;
       final mockEntity = MockAssetEntity();

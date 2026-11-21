@@ -26,6 +26,46 @@ void main() {
     await ctx.dispose();
   });
 
+  group('isInLockedAlbum', () {
+    test('is true for an asset of a selected album linked to a locked album', () async {
+      final user = await ctx.newUser();
+      final remoteAlbum = await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+      final album = await ctx.newLocalAlbum(backupSelection: .selected, linkedRemoteAlbumId: remoteAlbum.id);
+      final asset = await ctx.newLocalAsset();
+      await ctx.newLocalAlbumAsset(albumId: album.id, assetId: asset.id);
+
+      expect(await sut.isInLockedAlbum(asset.id), isTrue);
+    });
+
+    test('is false for an asset of a selected album linked to a regular album', () async {
+      final user = await ctx.newUser();
+      final remoteAlbum = await ctx.newRemoteAlbum(ownerId: user.id);
+      final album = await ctx.newLocalAlbum(backupSelection: .selected, linkedRemoteAlbumId: remoteAlbum.id);
+      final asset = await ctx.newLocalAsset();
+      await ctx.newLocalAlbumAsset(albumId: album.id, assetId: asset.id);
+
+      expect(await sut.isInLockedAlbum(asset.id), isFalse);
+    });
+
+    test('is false when the album linked to a locked album is not selected for backup', () async {
+      final user = await ctx.newUser();
+      final remoteAlbum = await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+      final album = await ctx.newLocalAlbum(backupSelection: .none, linkedRemoteAlbumId: remoteAlbum.id);
+      final asset = await ctx.newLocalAsset();
+      await ctx.newLocalAlbumAsset(albumId: album.id, assetId: asset.id);
+
+      expect(await sut.isInLockedAlbum(asset.id), isFalse);
+    });
+
+    test('is false for an asset of an unlinked album', () async {
+      final album = await ctx.newLocalAlbum(backupSelection: .selected);
+      final asset = await ctx.newLocalAsset();
+      await ctx.newLocalAlbumAsset(albumId: album.id, assetId: asset.id);
+
+      expect(await sut.isInLockedAlbum(asset.id), isFalse);
+    });
+  });
+
   group('getAllCounts', () {
     late String userId;
 

@@ -60,6 +60,7 @@ void main() {
     when(() => mockAssetService.getLocalAsset(any())).thenAnswer((_) async => null);
     when(() => mockAssetService.stackEditedUpload(any(), any(), any())).thenAnswer((_) async {});
     when(() => mockBackupRepository.markIfUnsupported(any(), any())).thenAnswer((_) async => false);
+    when(() => mockBackupRepository.isInLockedAlbum(any())).thenAnswer((_) async => false);
 
     sut = ForegroundUploadService(
       mockUploadRepository,
