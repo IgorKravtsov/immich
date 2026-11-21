@@ -36,6 +36,7 @@ import 'package:immich_mobile/data/db/main/table/remote/stack.dart';
 import 'package:immich_mobile/data/db/main/table/user/auth_user.dart';
 import 'package:immich_mobile/data/db/main/table/user/metadata.dart';
 import 'package:immich_mobile/data/db/main/table/user/partner.dart';
+import 'package:immich_mobile/data/db/main/table/user/partner_locked_asset.dart';
 import 'package:immich_mobile/data/db/main/table/user/user.dart';
 import 'package:immich_mobile/infrastructure/repositories/backup.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/local_album.repository.dart';
@@ -66,6 +67,7 @@ import 'package:sqlite_async/sqlite_async.dart';
     UserEntity,
     UserMetadataEntity,
     PartnerEntity,
+    PartnerLockedAssetEntity,
     LocalAlbumEntity,
     LocalAssetEntity,
     LocalAlbumAssetEntity,
@@ -160,7 +162,7 @@ class Drift extends $Drift {
   }
 
   @override
-  int get schemaVersion => 36;
+  int get schemaVersion => 37;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -382,6 +384,11 @@ class Drift extends $Drift {
               },
               from35To36: (m, v36) async {
                 await m.addColumn(v36.localAssetEntity, v36.localAssetEntity.unsupported);
+              },
+              from36To37: (m, v37) async {
+                await m.addColumn(v37.remoteAlbumEntity, v37.remoteAlbumEntity.isLocked);
+                await m.createTable(v37.partnerLockedAssetEntity);
+                await m.createIndex(v37.idxPartnerLockedAssetSharedWithAsset);
               },
             ),
           );

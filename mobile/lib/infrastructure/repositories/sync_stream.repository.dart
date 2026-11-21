@@ -21,6 +21,7 @@ import 'package:immich_mobile/data/db/main/table/remote/stack.drift.dart';
 import 'package:immich_mobile/data/db/main/table/user/auth_user.drift.dart';
 import 'package:immich_mobile/data/db/main/table/user/metadata.drift.dart';
 import 'package:immich_mobile/data/db/main/table/user/partner.drift.dart';
+import 'package:immich_mobile/data/db/main/table/user/partner_locked_asset.drift.dart';
 import 'package:immich_mobile/data/db/main/table/user/user.drift.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
@@ -62,6 +63,7 @@ class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepos
             await _db.memoryAssetEntity.deleteAll();
             await _db.memoryEntity.deleteAll();
             await _db.partnerEntity.deleteAll();
+            await _db.partnerLockedAssetEntity.deleteAll();
             await _db.personEntity.deleteAll();
             await _db.remoteAlbumAssetEntity.deleteAll();
             await _db.remoteAlbumEntity.deleteAll();
@@ -211,6 +213,45 @@ class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepos
       });
     } catch (error, stack) {
       _logger.severe('Error: SyncPartnerV1', error, stack);
+      rethrow;
+    }
+  }
+
+  Future<void> updatePartnerLockedAssetsV1(Iterable<SyncPartnerLockedAssetV1> data) async {
+    try {
+      await _db.batch((batch) {
+        batch.insertAllOnConflictUpdate(
+          _db.partnerLockedAssetEntity,
+          data.map(
+            (grant) => PartnerLockedAssetEntityCompanion(
+              sharedById: Value(grant.sharedById),
+              sharedWithId: Value(grant.sharedWithId),
+              assetId: Value(grant.assetId),
+            ),
+          ),
+        );
+      });
+    } catch (error, stack) {
+      _logger.severe('Error: SyncPartnerLockedAssetV1', error, stack);
+      rethrow;
+    }
+  }
+
+  Future<void> deletePartnerLockedAssetsV1(Iterable<SyncPartnerLockedAssetDeleteV1> data) async {
+    try {
+      await _db.batch((batch) {
+        for (final grant in data) {
+          batch.deleteWhere(
+            _db.partnerLockedAssetEntity,
+            (row) =>
+                row.sharedById.equals(grant.sharedById) &
+                row.sharedWithId.equals(grant.sharedWithId) &
+                row.assetId.equals(grant.assetId),
+          );
+        }
+      });
+    } catch (error, stack) {
+      _logger.severe('Error: SyncPartnerLockedAssetDeleteV1', error, stack);
       rethrow;
     }
   }
@@ -556,6 +597,7 @@ class SyncStreamRepository extends DatabaseAccessor<Drift> with $SyncStreamRepos
             thumbnailAssetId: Value(album.thumbnailAssetId),
             createdAt: Value(album.createdAt),
             updatedAt: Value(album.updatedAt),
+            isLocked: Value(album.isLocked),
           );
 
           batch.insert(

@@ -17,6 +17,7 @@ import 'package:immich_mobile/data/db/main/table/remote/asset.drift.dart';
 import 'package:immich_mobile/data/db/main/table/remote/cloud_id.drift.dart';
 import 'package:immich_mobile/data/db/main/table/user/auth_user.drift.dart';
 import 'package:immich_mobile/data/db/main/table/user/partner.drift.dart';
+import 'package:immich_mobile/data/db/main/table/user/partner_locked_asset.drift.dart';
 import 'package:immich_mobile/data/db/main/table/user/user.drift.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/domain/models/album/local_album.model.dart';
@@ -188,6 +189,7 @@ class MediumRepositoryContext {
     bool? isActivityEnabled,
     AlbumAssetOrder? order,
     String? thumbnailAssetId,
+    bool? isLocked,
   }) async {
     id ??= TestUtils.uuid();
     final album = await db
@@ -202,6 +204,7 @@ class MediumRepositoryContext {
             isActivityEnabled: .new(isActivityEnabled ?? false),
             order: .new(order ?? .asc),
             thumbnailAssetId: .new(thumbnailAssetId),
+            isLocked: .new(isLocked ?? false),
           ),
         );
 
@@ -216,6 +219,22 @@ class MediumRepositoryContext {
         );
 
     return album;
+  }
+
+  Future<void> newPartnerLockedAsset({
+    required String sharedById,
+    required String sharedWithId,
+    required String assetId,
+  }) {
+    return db
+        .into(db.partnerLockedAssetEntity)
+        .insert(
+          PartnerLockedAssetEntityCompanion(
+            sharedById: .new(sharedById),
+            sharedWithId: .new(sharedWithId),
+            assetId: .new(assetId),
+          ),
+        );
   }
 
   Future<void> newRemoteAlbumAsset({required String albumId, required String assetId}) {

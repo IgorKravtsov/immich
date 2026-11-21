@@ -171,13 +171,35 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
     origin: TimelineOrigin.remoteAlbum,
   );
 
+  Expression<bool> _visibleInAlbum({required bool isLockedAlbum}) =>
+      isLockedAlbum ? const Constant(true) : _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.locked).not();
+
   Stream<List<Bucket>> _watchRemoteAlbumBucket(String albumId, {GroupAssetsBy groupBy = GroupAssetsBy.day}) {
     if (groupBy == GroupAssetsBy.none) {
-      return _db.remoteAlbumAssetEntity
-          .count(where: (row) => row.albumId.equals(albumId))
-          .map(_generateBuckets)
+      return (_db.remoteAlbumEntity.select()..where((row) => row.id.equals(albumId)))
           .watch()
-          .map((results) => results.isNotEmpty ? results.first : const <Bucket>[])
+          .switchMap((albums) {
+            if (albums.isEmpty) {
+              return Stream.value(const <Bucket>[]);
+            }
+
+            final assetCount = _db.remoteAlbumAssetEntity.assetId.count();
+            final query = _db.remoteAlbumAssetEntity.selectOnly()
+              ..addColumns([assetCount])
+              ..join([
+                innerJoin(
+                  _db.remoteAssetEntity,
+                  _db.remoteAssetEntity.id.equalsExp(_db.remoteAlbumAssetEntity.assetId),
+                  useColumns: false,
+                ),
+              ])
+              ..where(
+                _db.remoteAlbumAssetEntity.albumId.equals(albumId) &
+                    _visibleInAlbum(isLockedAlbum: albums.first.isLocked),
+              );
+
+            return query.map((row) => _generateBuckets(row.read(assetCount) ?? 0)).watchSingle();
+          })
           .handleError((error) => const <Bucket>[]);
     }
 
@@ -190,6 +212,7 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
 
           final album = albums.first;
           final isAscending = album.order == AlbumAssetOrder.asc;
+          final visibleInAlbum = _visibleInAlbum(isLockedAlbum: album.isLocked);
           final assetCountExp = _db.remoteAssetEntity.id.count();
           final dateExp = _db.remoteAssetEntity.effectiveCreatedAt(groupBy);
 
@@ -202,7 +225,11 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
                 useColumns: false,
               ),
             ])
-            ..where(_db.remoteAssetEntity.deletedAt.isNull() & _db.remoteAlbumAssetEntity.albumId.equals(albumId))
+            ..where(
+              _db.remoteAssetEntity.deletedAt.isNull() &
+                  _db.remoteAlbumAssetEntity.albumId.equals(albumId) &
+                  visibleInAlbum,
+            )
             ..groupBy([dateExp]);
 
           if (isAscending) {
@@ -245,13 +272,18 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
         ..limit(1),
     );
 
-    final query = _db.remoteAssetEntity.select().addColumns([localId]).join([
-      innerJoin(
-        _db.remoteAlbumAssetEntity,
-        _db.remoteAlbumAssetEntity.assetId.equalsExp(_db.remoteAssetEntity.id),
-        useColumns: false,
-      ),
-    ])..where(_db.remoteAssetEntity.deletedAt.isNull() & _db.remoteAlbumAssetEntity.albumId.equals(albumId));
+    final query =
+        _db.remoteAssetEntity.select().addColumns([localId]).join([
+          innerJoin(
+            _db.remoteAlbumAssetEntity,
+            _db.remoteAlbumAssetEntity.assetId.equalsExp(_db.remoteAssetEntity.id),
+            useColumns: false,
+          ),
+        ])..where(
+          _db.remoteAssetEntity.deletedAt.isNull() &
+              _db.remoteAlbumAssetEntity.albumId.equals(albumId) &
+              _visibleInAlbum(isLockedAlbum: albumData.isLocked),
+        );
 
     query.orderBy(
       _assetDateOrder(groupBy, ascending: isAscending).map((order) => order(_db.remoteAssetEntity)).toList(),
@@ -345,10 +377,27 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
 
   TimelineQuery locked(String userId, GroupAssetsBy groupBy) => _remoteQueryBuilder(
     filter: (row) =>
-        row.deletedAt.isNull() & row.visibility.equalsValue(AssetVisibility.locked) & row.ownerId.equals(userId),
+        row.deletedAt.isNull() &
+        row.visibility.equalsValue(AssetVisibility.locked) &
+        (row.ownerId.equals(userId) | row.id.isInQuery(_partnerLockedAssetIds(userId))),
     origin: TimelineOrigin.lockedFolder,
     groupBy: groupBy,
   );
+
+  JoinedSelectStatement<HasResultSet, dynamic> _partnerLockedAssetIds(String userId) {
+    final grant = _db.partnerLockedAssetEntity;
+    final partner = _db.partnerEntity;
+    return grant.selectOnly()
+      ..addColumns([grant.assetId])
+      ..join([
+        innerJoin(
+          partner,
+          partner.sharedById.equalsExp(grant.sharedById) & partner.sharedWithId.equalsExp(grant.sharedWithId),
+          useColumns: false,
+        ),
+      ])
+      ..where(grant.sharedWithId.equals(userId));
+  }
 
   TimelineQuery video(String userId, GroupAssetsBy groupBy) => _remoteQueryBuilder(
     filter: (row) =>
