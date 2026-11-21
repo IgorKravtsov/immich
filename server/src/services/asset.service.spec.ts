@@ -145,7 +145,11 @@ describe(AssetService.name, () => {
 
       await sut.get(authStub.admin, asset.id);
 
-      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set([asset.id]));
+      expect(mocks.access.asset.checkPartnerAccess).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        new Set([asset.id]),
+        false,
+      );
     });
 
     it('should allow shared album access', async () => {
@@ -155,7 +159,11 @@ describe(AssetService.name, () => {
 
       await sut.get(authStub.admin, asset.id);
 
-      expect(mocks.access.asset.checkAlbumAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set([asset.id]));
+      expect(mocks.access.asset.checkAlbumAccess).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        new Set([asset.id]),
+        false,
+      );
     });
 
     it('should throw an error for no access', async () => {
@@ -210,6 +218,32 @@ describe(AssetService.name, () => {
       await sut.update(auth, asset.id, dto);
 
       expectResourceEvents(mocks, { userIds: [auth.user.id], changed: [Resource.asset(asset), ...paths] });
+    });
+
+    it('should remove a newly locked asset from regular albums', async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+      const asset = AssetFactory.from().owner(auth.user).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(auth, asset.id, { visibility: AssetVisibility.Locked });
+
+      expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledWith([asset.id], { isLocked: false });
+      expect(mocks.partner.removeLockedAssetsForAll).not.toHaveBeenCalled();
+    });
+
+    it('should remove an unlocked asset from locked albums and partner grants', async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+      const asset = AssetFactory.from({ visibility: AssetVisibility.Locked }).owner(auth.user).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getById.mockResolvedValue(getForAsset(asset));
+      mocks.asset.update.mockResolvedValue(getForAsset(asset));
+
+      await sut.update(auth, asset.id, { visibility: AssetVisibility.Archive });
+
+      expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledWith([asset.id], { isLocked: true });
+      expect(mocks.partner.removeLockedAssetsForAll).toHaveBeenCalledWith([asset.id]);
     });
 
     it('should not tell anyone when nothing changes', async () => {
@@ -471,6 +505,37 @@ describe(AssetService.name, () => {
       expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1', 'asset-2'], {
         visibility: AssetVisibility.Archive,
       });
+    });
+
+    it('should remove newly locked assets from regular albums only', async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
+
+      await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], visibility: AssetVisibility.Locked });
+
+      expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledTimes(1);
+      expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledWith(['asset-1', 'asset-2'], { isLocked: false });
+      expect(mocks.partner.removeLockedAssetsForAll).not.toHaveBeenCalled();
+    });
+
+    it('should remove unlocked assets from locked albums and partner grants', async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.updateAll(auth, { ids: ['asset-1'], visibility: AssetVisibility.Timeline });
+
+      expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledTimes(1);
+      expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledWith(['asset-1'], { isLocked: true });
+      expect(mocks.partner.removeLockedAssetsForAll).toHaveBeenCalledWith(['asset-1']);
+    });
+
+    it('should not touch albums or partner grants when visibility is unchanged', async () => {
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1']));
+
+      await sut.updateAll(AuthFactory.create(), { ids: ['asset-1'], isFavorite: true });
+
+      expect(mocks.album.removeAssetsFromAlbums).not.toHaveBeenCalled();
+      expect(mocks.partner.removeLockedAssetsForAll).not.toHaveBeenCalled();
     });
 
     it('should emit a websocket event if a sidecar write is not necessary', async () => {

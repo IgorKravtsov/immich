@@ -313,11 +313,7 @@ export class SyncService extends BaseService {
     }
   }
 
-  private async syncPartnerLockedAssetsV1(
-    options: SyncQueryOptions,
-    response: Writable,
-    checkpointMap: CheckpointMap,
-  ) {
+  private async syncPartnerLockedAssetsV1(options: SyncQueryOptions, response: Writable, checkpointMap: CheckpointMap) {
     const deleteType = SyncEntityType.PartnerLockedAssetDeleteV1;
     const deletes = this.syncRepository.partnerLockedAsset.getDeletes({ ...options, ack: checkpointMap[deleteType] });
     for await (const { id, ...data } of deletes) {

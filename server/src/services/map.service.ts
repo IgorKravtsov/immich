@@ -13,7 +13,9 @@ export class MapService extends BaseService {
       userIds.push(...partnerIds);
     }
 
-    const albumIds = options.withSharedAlbums ? await this.albumRepository.getAllIds(auth.user.id) : [];
+    const albumIds = options.withSharedAlbums
+      ? await this.albumRepository.getAllIds(auth.user.id, { isLocked: false })
+      : [];
 
     return this.mapRepository.getMapMarkers(auth.user.id, userIds, albumIds, options);
   }

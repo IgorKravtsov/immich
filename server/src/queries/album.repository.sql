@@ -153,6 +153,7 @@ where
   )
   and "album_asset"."assetId" in ($2)
   and "album"."deletedAt" is null
+  and "album"."isLocked" = $3
 
 -- AlbumRepository.getMetadataForIds
 select
@@ -169,7 +170,7 @@ from
   "asset"
   inner join "album_asset" on "album_asset"."assetId" = "asset"."id"
 where
-  "asset"."visibility" in ('archive', 'timeline')
+  "asset"."visibility" in ('archive', 'timeline', 'locked')
   and "album_asset"."albumId" in ($1)
   and "asset"."deletedAt" is null
 group by
@@ -289,6 +290,41 @@ order by
 delete from "album_asset"
 where
   "album_asset"."assetId" in ($1)
+
+-- AlbumRepository.removeAssetsFromAlbums
+delete from "album_asset"
+where
+  "album_asset"."assetId" in ($1)
+  and "album_asset"."albumId" in (
+    select
+      "album"."id"
+    from
+      "album"
+    where
+      "album"."isLocked" = $2
+  )
+
+-- AlbumRepository.getAssetsForLockChange
+select
+  "asset"."id",
+  "asset"."ownerId",
+  "asset"."visibility",
+  exists (
+    select
+    from
+      "album_asset" as "other_album_asset"
+      inner join "album" as "other_album" on "other_album"."id" = "other_album_asset"."albumId"
+    where
+      "other_album_asset"."assetId" = "asset"."id"
+      and "other_album_asset"."albumId" != $1
+      and "other_album"."isLocked" = $2
+      and "other_album"."deletedAt" is null
+  ) as "inOtherLockedAlbum"
+from
+  "album_asset"
+  inner join "asset" on "asset"."id" = "album_asset"."assetId"
+where
+  "album_asset"."albumId" = $3
 
 -- AlbumRepository.getAssetIds
 select

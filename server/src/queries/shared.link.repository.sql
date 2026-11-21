@@ -347,6 +347,18 @@ where
   )
   and "shared_link"."slug" = $2
 
+-- SharedLinkRepository.removeUnprotectedForAlbum
+delete from "shared_link"
+where
+  "shared_link"."albumId" = $1
+  and (
+    "shared_link"."password" is null
+    or "shared_link"."password" = $2
+  )
+returning
+  "shared_link"."id",
+  "shared_link"."userId"
+
 -- SharedLinkRepository.getSharedLinks
 select
   "shared_link".*,

@@ -73,7 +73,7 @@ export const addAssets = async (
 export const removeAssets = async (
   auth: AuthDto,
   repositories: { access: AccessRepository; bulk: IBulkAsset },
-  dto: { parentId: string; assetIds: string[]; canAlwaysRemove: Permission },
+  dto: { parentId: string; assetIds: string[]; canAlwaysRemove: Permission; permission?: Permission },
 ) => {
   const { access, bulk } = repositories;
 
@@ -82,7 +82,7 @@ export const removeAssets = async (
   const existingAssetIds = await bulk.getAssetIds(dto.parentId, dto.assetIds);
   const allowedAssetIds = canAlwaysRemove.has(dto.parentId)
     ? existingAssetIds
-    : await checkAccess(access, { auth, permission: Permission.AssetShare, ids: existingAssetIds });
+    : await checkAccess(access, { auth, permission: dto.permission ?? Permission.AssetShare, ids: existingAssetIds });
 
   const results: BulkIdResponseDto[] = [];
   for (const assetId of dto.assetIds) {

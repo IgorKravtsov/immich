@@ -33,7 +33,8 @@ from
 where
   "album"."id" in ($1)
   and "album"."isActivityEnabled" = $2
-  and "user"."id" = $3
+  and "album"."isLocked" = $3
+  and "user"."id" = $4
   and "album"."deletedAt" is null
 
 -- AccessRepository.album.checkOwnerAccess
@@ -46,6 +47,7 @@ from
   and "album_user"."userId" = $1
 where
   "album"."id" in ($2)
+  and "album"."isLocked" = $3
   and "album"."deletedAt" is null
 
 -- AccessRepository.album.checkSharedAlbumAccess
@@ -59,8 +61,9 @@ from
 where
   "album"."id" in ($1)
   and "album"."deletedAt" is null
-  and "user"."id" = $2
-  and "album_user"."role" in ($3, $4)
+  and "album"."isLocked" = $2
+  and "user"."id" = $3
+  and "album_user"."role" in ($4, $5)
 
 -- AccessRepository.album.checkSharedLinkAccess
 select
@@ -96,6 +99,8 @@ where
   )
   and "user"."id" = $2
   and "album"."deletedAt" is null
+  and "album"."isLocked" = $3
+  and "asset"."visibility" != 'locked'
 
 -- AccessRepository.asset.checkOwnerAccess
 select

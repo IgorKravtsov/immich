@@ -419,6 +419,45 @@ describe(NotificationService.name, () => {
       });
     });
 
+    it('should not reveal the name or thumbnail of a locked album in the invite', async () => {
+      const album = AlbumFactory.create({ albumName: 'Secret trip', isLocked: true, albumThumbnailAssetId: newUuid() });
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.user.get.mockResolvedValue({
+        ...userStub.user1,
+        metadata: [
+          {
+            key: UserMetadataKey.Preferences,
+            value: { emailNotifications: { enabled: true, albumInvite: true } },
+          },
+        ],
+      });
+      mocks.systemMetadata.get.mockResolvedValue({ server: {} });
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent);
+      mocks.email.renderEmail.mockResolvedValue({ html: '', text: '' });
+
+      await expect(sut.handleAlbumInvite({ id: album.id, recipientId: '', senderName: 'foo' })).resolves.toBe(
+        JobStatus.Success,
+      );
+
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ description: 'foo gave you access to a locked album' }),
+      );
+      expect(mocks.email.renderEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ albumName: 'Locked album', cid: undefined }) }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.SendMail,
+        data: expect.objectContaining({
+          subject: 'You have been added to a locked album',
+          imageAttachments: undefined,
+        }),
+      });
+      expect(mocks.assetJob.getAlbumThumbnailFiles).not.toHaveBeenCalled();
+      expect(JSON.stringify(mocks.notification.create.mock.calls)).not.toContain('Secret trip');
+      expect(JSON.stringify(mocks.email.renderEmail.mock.calls)).not.toContain('Secret trip');
+      expect(JSON.stringify(mocks.job.queue.mock.calls)).not.toContain('Secret trip');
+    });
+
     it('should send invite email without album thumbnail if thumbnail asset does not exist', async () => {
       const album = AlbumFactory.create({ albumThumbnailAssetId: newUuid() });
       mocks.album.getById.mockResolvedValue(getForAlbum(album));
@@ -599,6 +638,37 @@ describe(NotificationService.name, () => {
       expect(mocks.user.get).toHaveBeenCalledWith(user.id, { withDeleted: false });
       expect(mocks.email.renderEmail).toHaveBeenCalled();
       expect(mocks.job.queue).toHaveBeenCalled();
+    });
+
+    it('should not reveal the name or thumbnail of a locked album in the update', async () => {
+      const user = UserFactory.create();
+      const album = AlbumFactory.from({ albumName: 'Secret trip', isLocked: true, albumThumbnailAssetId: newUuid() })
+        .albumUser({ userId: user.id })
+        .build();
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.user.get.mockResolvedValue(user);
+      mocks.notification.create.mockResolvedValue(notificationStub.albumEvent);
+      mocks.email.renderEmail.mockResolvedValue({ html: '', text: '' });
+
+      await expect(sut.handleAlbumUpdate({ id: album.id, recipientId: user.id })).resolves.toBe(JobStatus.Success);
+
+      expect(mocks.notification.create).toHaveBeenCalledWith(
+        expect.objectContaining({ description: 'New media has been added to a locked album' }),
+      );
+      expect(mocks.email.renderEmail).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ albumName: 'Locked album', cid: undefined }) }),
+      );
+      expect(mocks.job.queue).toHaveBeenCalledWith({
+        name: JobName.SendMail,
+        data: expect.objectContaining({
+          subject: 'New media has been added to a locked album',
+          imageAttachments: undefined,
+        }),
+      });
+      expect(mocks.assetJob.getAlbumThumbnailFiles).not.toHaveBeenCalled();
+      expect(JSON.stringify(mocks.notification.create.mock.calls)).not.toContain('Secret trip');
+      expect(JSON.stringify(mocks.email.renderEmail.mock.calls)).not.toContain('Secret trip');
+      expect(JSON.stringify(mocks.job.queue.mock.calls)).not.toContain('Secret trip');
     });
 
     it('should add new recipients for new images if job is already queued', async () => {

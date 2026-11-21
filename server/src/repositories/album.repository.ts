@@ -5,10 +5,10 @@ import { InjectKysely } from 'nestjs-kysely';
 import { columns } from 'src/database.js';
 import { Chunked, ChunkedArray, ChunkedSet, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
-import { AlbumUserRole } from 'src/enum.js';
+import { AlbumUserRole, AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
-import { asUuid, dummy, withDefaultVisibility } from 'src/utils/database.js';
+import { asUuid, dummy } from 'src/utils/database.js';
 
 export interface AlbumAssetCount {
   albumId: string;
@@ -78,7 +78,7 @@ export class AlbumRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID] })
-  getByAssetId(ownerId: string, assetId: string) {
+  getByAssetId(ownerId: string, assetId: string, { includeLocked = true }: { includeLocked?: boolean } = {}) {
     return this.db
       .selectFrom('album')
       .selectAll('album')
@@ -93,6 +93,7 @@ export class AlbumRepository {
       )
       .where('album_asset.assetId', '=', assetId)
       .where('album.deletedAt', 'is', null)
+      .$if(!includeLocked, (qb) => qb.where('album.isLocked', '=', false))
       .select(withAlbumUsers(ownerId))
       .orderBy('album.createdAt', 'desc')
       .execute();
@@ -119,6 +120,7 @@ export class AlbumRepository {
       )
       .where('album_asset.assetId', 'in', assetIds)
       .where('album.deletedAt', 'is', null)
+      .where('album.isLocked', '=', false)
       .select('album_asset.assetId')
       .execute();
 
@@ -144,7 +146,11 @@ export class AlbumRepository {
     return (
       this.db
         .selectFrom('asset')
-        .$call(withDefaultVisibility)
+        .where('asset.visibility', 'in', [
+          sql.lit(AssetVisibility.Archive),
+          sql.lit(AssetVisibility.Timeline),
+          sql.lit(AssetVisibility.Locked),
+        ])
         .innerJoin('album_asset', 'album_asset.assetId', 'asset.id')
         .select('album_asset.albumId as albumId')
         .select((eb) => eb.fn.min(sql<Date>`("asset"."localDateTime" AT TIME ZONE 'UTC'::text)::date`).as('startDate'))
@@ -159,13 +165,17 @@ export class AlbumRepository {
     );
   }
 
-  private buildAlbumBaseQuery(ownerId: string, { isOwned, isShared }: { isOwned?: boolean; isShared?: boolean }) {
+  private buildAlbumBaseQuery(
+    ownerId: string,
+    { isOwned, isShared, isLocked }: { isOwned?: boolean; isShared?: boolean; isLocked?: boolean },
+  ) {
     return this.db
       .selectFrom('album')
       .innerJoin('album_user', (join) =>
         join.onRef('album_user.albumId', '=', 'album.id').on('album_user.userId', '=', ownerId),
       )
       .where('album.deletedAt', 'is', null)
+      .$if(isLocked !== undefined, (qb) => qb.where('album.isLocked', '=', isLocked!))
       .$if(isOwned === true, (qb) => qb.where('album_user.role', '=', sql.lit(AlbumUserRole.Owner)))
       .$if(isOwned === false, (qb) => qb.where('album_user.role', '!=', sql.lit(AlbumUserRole.Owner)))
       .$if(isShared !== undefined, (qb) =>
@@ -187,7 +197,7 @@ export class AlbumRepository {
   @GenerateSql({ params: [DummyValue.UUID, { isOwned: true, isShared: true }] })
   getAll(
     ownerId: string,
-    options: { id?: string; isOwned?: boolean; isShared?: boolean; name?: string } = {},
+    options: { id?: string; isOwned?: boolean; isShared?: boolean; isLocked?: boolean; name?: string } = {},
   ): Promise<MapAlbumDto[]> {
     return this.buildAlbumBaseQuery(ownerId, options)
       .selectAll('album')
@@ -200,7 +210,10 @@ export class AlbumRepository {
   }
 
   @GenerateSql({ params: [DummyValue.UUID, { isOwned: true, isShared: true }] })
-  async getAllIds(ownerId: string, options: { isOwned?: boolean; isShared?: boolean } = {}): Promise<string[]> {
+  async getAllIds(
+    ownerId: string,
+    options: { isOwned?: boolean; isShared?: boolean; isLocked?: boolean } = {},
+  ): Promise<string[]> {
     const rows = await this.buildAlbumBaseQuery(ownerId, options)
       .select('album.id')
       .orderBy('album.createdAt', 'desc')
@@ -224,6 +237,45 @@ export class AlbumRepository {
   @Chunked()
   async removeAssetsFromAll(assetIds: string[]): Promise<void> {
     await this.db.deleteFrom('album_asset').where('album_asset.assetId', 'in', assetIds).execute();
+  }
+
+  @GenerateSql({ params: [[DummyValue.UUID], { isLocked: false }] })
+  @Chunked()
+  async removeAssetsFromAlbums(assetIds: string[], { isLocked }: { isLocked: boolean }): Promise<void> {
+    if (assetIds.length === 0) {
+      return;
+    }
+
+    await this.db
+      .deleteFrom('album_asset')
+      .where('album_asset.assetId', 'in', assetIds)
+      .where('album_asset.albumId', 'in', (eb) =>
+        eb.selectFrom('album').select('album.id').where('album.isLocked', '=', isLocked),
+      )
+      .execute();
+  }
+
+  @GenerateSql({ params: [DummyValue.UUID] })
+  getAssetsForLockChange(albumId: string) {
+    return this.db
+      .selectFrom('album_asset')
+      .innerJoin('asset', 'asset.id', 'album_asset.assetId')
+      .where('album_asset.albumId', '=', albumId)
+      .select(['asset.id', 'asset.ownerId', 'asset.visibility'])
+      .select((eb) =>
+        eb
+          .exists(
+            eb
+              .selectFrom('album_asset as other_album_asset')
+              .innerJoin('album as other_album', 'other_album.id', 'other_album_asset.albumId')
+              .whereRef('other_album_asset.assetId', '=', 'asset.id')
+              .where('other_album_asset.albumId', '!=', albumId)
+              .where('other_album.isLocked', '=', true)
+              .where('other_album.deletedAt', 'is', null),
+          )
+          .as('inOtherLockedAlbum'),
+      )
+      .execute();
   }
 
   @Chunked({ paramIndex: 1 })

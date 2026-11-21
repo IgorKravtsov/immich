@@ -151,3 +151,28 @@ delete from "partner"
 where
   "sharedWithId" = $1
   and "sharedById" = $2
+
+-- PartnerRepository.getLockedAssetIds
+select
+  "assetId"
+from
+  "partner_locked_asset"
+where
+  "sharedById" = $1
+  and "sharedWithId" = $2
+order by
+  "createdAt" asc
+
+-- PartnerRepository.removeLockedAssetsForAll
+delete from "partner_locked_asset"
+where
+  "assetId" in ($1)
+
+-- PartnerRepository.getLockedAssetPartnerIds
+select distinct
+  "sharedWithId"
+from
+  "partner_locked_asset"
+where
+  "sharedById" = $1
+  and "assetId" in ($2)

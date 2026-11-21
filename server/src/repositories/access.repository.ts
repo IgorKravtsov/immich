@@ -51,7 +51,7 @@ class ActivityAccess {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkCreateAccess(userId: string, albumIds: Set<string>) {
+  async checkCreateAccess(userId: string, albumIds: Set<string>, hasElevatedPermission?: boolean) {
     if (albumIds.size === 0) {
       return new Set<string>();
     }
@@ -63,6 +63,7 @@ class ActivityAccess {
       .innerJoin('user', (join) => join.onRef('user.id', '=', 'albumUsers.userId').on('user.deletedAt', 'is', null))
       .where('album.id', 'in', [...albumIds])
       .where('album.isActivityEnabled', '=', true)
+      .$if(!hasElevatedPermission, (qb) => qb.where('album.isLocked', '=', false))
       .where((eb) => eb('user.id', '=', userId))
       .where('album.deletedAt', 'is', null)
       .execute()
@@ -75,7 +76,7 @@ class AlbumAccess {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkOwnerAccess(userId: string, albumIds: Set<string>) {
+  async checkOwnerAccess(userId: string, albumIds: Set<string>, hasElevatedPermission?: boolean) {
     if (albumIds.size === 0) {
       return new Set<string>();
     }
@@ -84,6 +85,7 @@ class AlbumAccess {
       .selectFrom('album')
       .select('album.id')
       .where('album.id', 'in', [...albumIds])
+      .$if(!hasElevatedPermission, (qb) => qb.where('album.isLocked', '=', false))
       .innerJoin('album_user', (join) =>
         join
           .onRef('album.id', '=', 'album_user.albumId')
@@ -97,7 +99,12 @@ class AlbumAccess {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkSharedAlbumAccess(userId: string, albumIds: Set<string>, access: AlbumUserRole) {
+  async checkSharedAlbumAccess(
+    userId: string,
+    albumIds: Set<string>,
+    access: AlbumUserRole,
+    hasElevatedPermission?: boolean,
+  ) {
     if (albumIds.size === 0) {
       return new Set<string>();
     }
@@ -112,6 +119,7 @@ class AlbumAccess {
       .innerJoin('user', (join) => join.onRef('user.id', '=', 'album_user.userId').on('user.deletedAt', 'is', null))
       .where('album.id', 'in', [...albumIds])
       .where('album.deletedAt', 'is', null)
+      .$if(!hasElevatedPermission, (qb) => qb.where('album.isLocked', '=', false))
       .where('user.id', '=', userId)
       .where('album_user.role', 'in', [...accessRole])
       .execute()
@@ -145,7 +153,7 @@ class AssetAccess {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkAlbumAccess(userId: string, assetIds: Set<string>) {
+  async checkAlbumAccess(userId: string, assetIds: Set<string>, hasElevatedPermission?: boolean) {
     if (assetIds.size === 0) {
       return new Set<string>();
     }
@@ -169,6 +177,9 @@ class AssetAccess {
       )
       .where('user.id', '=', userId)
       .where('album.deletedAt', 'is', null)
+      .$if(!hasElevatedPermission, (qb) =>
+        qb.where('album.isLocked', '=', false).where('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+      )
       .execute()
       .then((assets) => {
         const allowedIds = new Set<string>();
@@ -203,7 +214,7 @@ class AssetAccess {
 
   @GenerateSql({ params: [DummyValue.UUID, DummyValue.UUID_SET] })
   @ChunkedSet({ paramIndex: 1 })
-  async checkPartnerAccess(userId: string, assetIds: Set<string>) {
+  async checkPartnerAccess(userId: string, assetIds: Set<string>, hasElevatedPermission?: boolean) {
     if (assetIds.size === 0) {
       return new Set<string>();
     }
@@ -220,6 +231,20 @@ class AssetAccess {
         eb.or([
           eb('asset.visibility', '=', sql.lit(AssetVisibility.Timeline)),
           eb('asset.visibility', '=', sql.lit(AssetVisibility.Hidden)),
+          ...(hasElevatedPermission
+            ? [
+                eb.and([
+                  eb('asset.visibility', '=', sql.lit(AssetVisibility.Locked)),
+                  eb.exists(
+                    eb
+                      .selectFrom('partner_locked_asset')
+                      .whereRef('partner_locked_asset.assetId', '=', 'asset.id')
+                      .whereRef('partner_locked_asset.sharedById', '=', 'partner.sharedById')
+                      .whereRef('partner_locked_asset.sharedWithId', '=', 'partner.sharedWithId'),
+                  ),
+                ]),
+              ]
+            : []),
         ]),
       )
 

@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { AssetIdErrorReason } from 'src/dtos/asset-ids.response.dto.js';
 import { mapSharedLink } from 'src/dtos/shared-link.dto.js';
-import { AlbumUserRole, SharedLinkType } from 'src/enum.js';
+import { AlbumUserRole, AssetVisibility, SharedLinkType } from 'src/enum.js';
 import { Resource } from 'src/resource-paths.js';
 import { SharedLinkService } from 'src/services/shared-link.service.js';
 import { AlbumFactory } from 'test/factories/album.factory.js';
@@ -11,7 +11,7 @@ import { SharedLinkFactory } from 'test/factories/shared-link.factory.js';
 import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { sharedLinkStub } from 'test/fixtures/shared-link.stub.js';
-import { getForSharedLink } from 'test/mappers.js';
+import { getForAlbum, getForSharedLink } from 'test/mappers.js';
 import { factory } from 'test/small.factory.js';
 import { ServiceMocks, expectResourceEvents, newTestService } from 'test/utils.js';
 
@@ -171,7 +171,11 @@ describe(SharedLinkService.name, () => {
 
       await sut.create(authStub.admin, { type: SharedLinkType.Album, albumId: album.id });
 
-      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set([album.id]));
+      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        new Set([album.id]),
+        false,
+      );
       expect(mocks.sharedLink.create).toHaveBeenCalledWith({
         type: SharedLinkType.Album,
         userId: authStub.admin.user.id,
@@ -291,7 +295,134 @@ describe(SharedLinkService.name, () => {
     });
   });
 
+  describe('create with locked content', () => {
+    it('should require a password for a locked album link', async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+      const album = AlbumFactory.from({ isLocked: true }).owner(auth.user).build();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+
+      await expect(sut.create(auth, { type: SharedLinkType.Album, albumId: album.id })).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+
+      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(auth.user.id, new Set([album.id]), true);
+      expect(mocks.sharedLink.create).not.toHaveBeenCalled();
+    });
+
+    it('should create a locked album link with a password', async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+      const album = AlbumFactory.from({ isLocked: true }).owner(auth.user).build();
+      const sharedLink = SharedLinkFactory.from({ password: 'secret' }).album(album).build();
+      mocks.access.album.checkOwnerAccess.mockResolvedValue(new Set([album.id]));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+      mocks.album.getUserIds.mockResolvedValue([auth.user.id]);
+      mocks.sharedLink.create.mockResolvedValue(getForSharedLink(sharedLink));
+
+      await sut.create(auth, { type: SharedLinkType.Album, albumId: album.id, password: 'secret' });
+
+      expect(mocks.sharedLink.create).toHaveBeenCalledWith(expect.objectContaining({ password: 'secret' }));
+    });
+
+    it('should not allow own locked assets in an individual link without an elevated session', async () => {
+      const auth = AuthFactory.from().session().build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set());
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set());
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set());
+
+      await expect(
+        sut.create(auth, { type: SharedLinkType.Individual, assetIds: ['locked-asset'], password: 'secret' }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledTimes(1);
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenCalledWith(auth.user.id, new Set(['locked-asset']), false);
+      expect(mocks.sharedLink.create).not.toHaveBeenCalled();
+    });
+
+    it('should require a password for an individual link with own locked assets', async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+      mocks.access.asset.checkOwnerAccess
+        .mockResolvedValueOnce(new Set(['asset-1']))
+        .mockResolvedValueOnce(new Set(['locked-asset']));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set());
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set());
+
+      await expect(
+        sut.create(auth, { type: SharedLinkType.Individual, assetIds: ['asset-1', 'locked-asset'] }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.access.asset.checkOwnerAccess).toHaveBeenNthCalledWith(
+        2,
+        auth.user.id,
+        new Set(['locked-asset']),
+        true,
+      );
+      expect(mocks.sharedLink.create).not.toHaveBeenCalled();
+    });
+
+    it('should create an individual link with own locked assets and a password', async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+      const asset = AssetFactory.create({ ownerId: auth.user.id, visibility: AssetVisibility.Locked });
+      const sharedLink = SharedLinkFactory.from({ password: 'secret' })
+        .asset(asset, (builder) => builder.exif())
+        .build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValueOnce(new Set()).mockResolvedValueOnce(new Set([asset.id]));
+      mocks.access.asset.checkAlbumAccess.mockResolvedValue(new Set());
+      mocks.access.asset.checkPartnerAccess.mockResolvedValue(new Set());
+      mocks.sharedLink.create.mockResolvedValue(getForSharedLink(sharedLink));
+
+      await sut.create(auth, { type: SharedLinkType.Individual, assetIds: [asset.id], password: 'secret' });
+
+      expect(mocks.sharedLink.create).toHaveBeenCalledWith(
+        expect.objectContaining({ assetIds: [asset.id], password: 'secret' }),
+      );
+    });
+  });
+
   describe('update', () => {
+    it('should not allow removing the password from a locked album link', async () => {
+      const auth = AuthFactory.create();
+      const album = AlbumFactory.create({ isLocked: true });
+      const sharedLink = SharedLinkFactory.from({ userId: auth.user.id, albumId: album.id, password: 'secret' })
+        .album(album)
+        .build();
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.album.getById.mockResolvedValue(getForAlbum(album));
+
+      for (const password of [null, '']) {
+        await expect(sut.update(auth, sharedLink.id, { password })).rejects.toBeInstanceOf(BadRequestException);
+      }
+
+      expect(mocks.sharedLink.update).not.toHaveBeenCalled();
+    });
+
+    it('should not allow removing the password from a link with locked assets', async () => {
+      const auth = AuthFactory.create();
+      const asset = AssetFactory.create({ ownerId: auth.user.id, visibility: AssetVisibility.Locked });
+      const sharedLink = SharedLinkFactory.from({ userId: auth.user.id, password: 'secret' })
+        .asset(asset, (builder) => builder.exif())
+        .build();
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+
+      await expect(sut.update(auth, sharedLink.id, { password: null })).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mocks.sharedLink.update).not.toHaveBeenCalled();
+    });
+
+    it('should allow changing the password of a locked album link', async () => {
+      const auth = AuthFactory.create();
+      const album = AlbumFactory.create({ isLocked: true });
+      const sharedLink = SharedLinkFactory.from({ userId: auth.user.id, albumId: album.id, password: 'secret' })
+        .album(album)
+        .build();
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.sharedLink.update.mockResolvedValue(getForSharedLink(sharedLink));
+
+      await sut.update(auth, sharedLink.id, { password: 'other' });
+
+      expect(mocks.sharedLink.update).toHaveBeenCalledWith(expect.objectContaining({ password: 'other' }));
+    });
+
     it('should throw an error for an invalid shared link', async () => {
       mocks.sharedLink.get.mockResolvedValue(void 0);
 

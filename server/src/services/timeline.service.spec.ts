@@ -1,7 +1,9 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { AssetVisibility } from 'src/enum.js';
 import { TimelineService } from 'src/services/timeline.service.js';
+import { PartnerFactory } from 'test/factories/partner.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
+import { getForPartner } from 'test/mappers.js';
 import { ServiceMocks, newTestService } from 'test/utils.js';
 
 describe(TimelineService.name, () => {
@@ -59,7 +61,11 @@ describe(TimelineService.name, () => {
         json,
       );
 
-      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(authStub.admin.user.id, new Set(['album-id']));
+      expect(mocks.access.album.checkOwnerAccess).toHaveBeenCalledWith(
+        authStub.admin.user.id,
+        new Set(['album-id']),
+        false,
+      );
       expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
         'bucket',
         {
@@ -232,7 +238,9 @@ describe(TimelineService.name, () => {
       expect(mocks.asset.getTimeBucket).not.toHaveBeenCalled();
     });
 
-    it("should throw an error for another user's locked assets even with an elevated session", async () => {
+    it("should allow another user's locked assets with an elevated session", async () => {
+      const json = `[{ id: ['asset-id'] }]`;
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: json });
       mocks.access.timeline.checkPartnerAccess.mockResolvedValue(new Set(['partner-id']));
 
       await expect(
@@ -241,7 +249,24 @@ describe(TimelineService.name, () => {
           userId: 'partner-id',
           visibility: AssetVisibility.Locked,
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).resolves.toEqual(json);
+      expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
+        'bucket',
+        { timeBucket: 'bucket', visibility: AssetVisibility.Locked, userIds: ['partner-id'] },
+        authStub.adminWithElevatedPermission,
+      );
+    });
+
+    it("should reject another user's locked assets without an elevated session", async () => {
+      mocks.access.timeline.checkPartnerAccess.mockResolvedValue(new Set(['partner-id']));
+
+      await expect(
+        sut.getTimeBucket(authStub.admin, {
+          timeBucket: 'bucket',
+          userId: 'partner-id',
+          visibility: AssetVisibility.Locked,
+        }),
+      ).rejects.toThrow(UnauthorizedException);
       expect(mocks.asset.getTimeBucket).not.toHaveBeenCalled();
     });
 
@@ -276,15 +301,43 @@ describe(TimelineService.name, () => {
       ).rejects.toThrow(BadRequestException);
     });
 
-    it('should throw an error if withPartners is true and visibility is locked', async () => {
+    it('should include partners regardless of timeline setting if withPartners is true and visibility is locked', async () => {
+      const auth = authStub.adminWithElevatedPermission;
+      const partner = PartnerFactory.create({ sharedWithId: auth.user.id, inTimeline: false });
+      const json = `[{ id: ['asset-id'] }]`;
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: json });
+      mocks.partner.getAll.mockResolvedValue([getForPartner(partner)]);
+
       await expect(
-        sut.getTimeBucket(authStub.adminWithElevatedPermission, {
+        sut.getTimeBucket(auth, {
           timeBucket: 'bucket',
           visibility: AssetVisibility.Locked,
           withPartners: true,
-          userId: authStub.adminWithElevatedPermission.user.id,
+          userId: auth.user.id,
         }),
-      ).rejects.toThrow(BadRequestException);
+      ).resolves.toEqual(json);
+      expect(mocks.asset.getTimeBucket).toHaveBeenCalledWith(
+        'bucket',
+        {
+          timeBucket: 'bucket',
+          visibility: AssetVisibility.Locked,
+          withPartners: true,
+          userIds: [auth.user.id, partner.sharedById],
+        },
+        auth,
+      );
+    });
+
+    it('should reject withPartners and locked visibility without an elevated session', async () => {
+      await expect(
+        sut.getTimeBucket(authStub.admin, {
+          timeBucket: 'bucket',
+          visibility: AssetVisibility.Locked,
+          withPartners: true,
+          userId: authStub.admin.user.id,
+        }),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(mocks.asset.getTimeBucket).not.toHaveBeenCalled();
     });
   });
 });

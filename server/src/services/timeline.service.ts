@@ -35,7 +35,7 @@ export class TimelineService extends BaseService {
         const partnerIds = await getMyPartnerIds({
           userId: auth.user.id,
           repository: this.partnerRepository,
-          timelineEnabled: !options.personId || undefined,
+          timelineEnabled: (!options.personId && options.visibility !== AssetVisibility.Locked) || undefined,
         });
         userIds.push(...partnerIds);
       }
@@ -62,7 +62,9 @@ export class TimelineService extends BaseService {
     const includesOtherUsers = dto.withPartners || (dto.userId && dto.userId !== auth.user.id);
     if (includesOtherUsers) {
       dto.visibility ??= AssetVisibility.Timeline;
-      if (dto.visibility !== AssetVisibility.Timeline || dto.isTrashed || dto.isFavorite !== undefined) {
+      const isAllowedVisibility =
+        dto.visibility === AssetVisibility.Timeline || dto.visibility === AssetVisibility.Locked;
+      if (!isAllowedVisibility || dto.isTrashed || dto.isFavorite !== undefined) {
         throw new BadRequestException(
           'Only non-archived, non-trashed, non-favorited, non-locked assets can be requested for other users',
         );

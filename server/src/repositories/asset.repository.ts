@@ -173,6 +173,23 @@ const withBoundingBox = <T>(qb: SelectQueryBuilder<DB, 'asset' | 'asset_exif', T
   );
 };
 
+const isOwnOrPartnerGrantedLocked = (eb: ExpressionBuilder<DB, 'asset'>, userId: string) =>
+  eb.or([
+    eb('asset.ownerId', '=', asUuid(userId)),
+    eb.exists(
+      eb
+        .selectFrom('partner_locked_asset')
+        .innerJoin('partner', (join) =>
+          join
+            .onRef('partner.sharedById', '=', 'partner_locked_asset.sharedById')
+            .onRef('partner.sharedWithId', '=', 'partner_locked_asset.sharedWithId'),
+        )
+        .whereRef('partner_locked_asset.assetId', '=', 'asset.id')
+        .whereRef('partner_locked_asset.sharedById', '=', 'asset.ownerId')
+        .where('partner_locked_asset.sharedWithId', '=', asUuid(userId)),
+    ),
+  ]);
+
 @Injectable()
 export class AssetRepository {
   constructor(@InjectKysely() private db: Kysely<DB>) {}
@@ -792,6 +809,9 @@ export class AssetRepository {
             qb.where((eb) => {
               // TODO this should become a shared `hasAccess` style helper once implement sharing in more places
               const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
+              if (options.visibility === AssetVisibility.Locked) {
+                return eb.and([isOwner, isOwnOrPartnerGrantedLocked(eb, auth.user.id)]);
+              }
               return options.personId ? eb.or([isOwner, inSharedAlbum(auth.user.id, 'asset.id')]) : isOwner;
             }),
           )
@@ -889,6 +909,9 @@ export class AssetRepository {
           .$if(!!options.userIds, (qb) =>
             qb.where((eb) => {
               const isOwner = eb('asset.ownerId', '=', anyUuid(options.userIds!));
+              if (options.visibility === AssetVisibility.Locked) {
+                return eb.and([isOwner, isOwnOrPartnerGrantedLocked(eb, auth.user.id)]);
+              }
               return options.personId ? eb.or([isOwner, inSharedAlbum(auth.user.id, 'asset.id')]) : isOwner;
             }),
           )

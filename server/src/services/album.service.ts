@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { ASSET_VISIBILITY_DEPENDENT_PATHS } from 'src/constants.js';
 import {
   AddUsersDto,
   AlbumResponseDto,
@@ -15,10 +16,11 @@ import {
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto.js';
 import { AuthDto, isMetadataHidden } from 'src/dtos/auth.dto.js';
 import { MapMarkerResponseDto } from 'src/dtos/map.dto.js';
-import { AlbumUserRole, Permission } from 'src/enum.js';
+import { AlbumUserRole, AssetVisibility, Permission } from 'src/enum.js';
 import { AlbumAssetCount } from 'src/repositories/album.repository.js';
 import { Resource } from 'src/resource-paths.js';
 import { BaseService } from 'src/services/base.service.js';
+import { requireElevatedPermission } from 'src/utils/access.js';
 import { addAssets, removeAssets } from 'src/utils/asset.util.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { findOrFail } from 'src/utils/misc.js';
@@ -38,9 +40,9 @@ const mapAlbumMetadata = (metadata?: AlbumAssetCount) => ({
 export class AlbumService extends BaseService {
   async getStatistics(auth: AuthDto): Promise<AlbumStatisticsResponseDto> {
     const [owned, shared, notShared] = await Promise.all([
-      this.albumRepository.getAll(auth.user.id, { isOwned: true }),
-      this.albumRepository.getAll(auth.user.id, { isShared: true }),
-      this.albumRepository.getAll(auth.user.id, { isOwned: true, isShared: false }),
+      this.albumRepository.getAll(auth.user.id, { isOwned: true, isLocked: false }),
+      this.albumRepository.getAll(auth.user.id, { isShared: true, isLocked: false }),
+      this.albumRepository.getAll(auth.user.id, { isOwned: true, isShared: false, isLocked: false }),
     ]);
 
     return {
@@ -50,12 +52,19 @@ export class AlbumService extends BaseService {
     };
   }
 
-  async getAll({ user: { id: ownerId } }: AuthDto, { assetId, ...rest }: GetAlbumsDto): Promise<AlbumResponseDto[]> {
+  async getAll(auth: AuthDto, { assetId, isLocked, ...rest }: GetAlbumsDto): Promise<AlbumResponseDto[]> {
+    if (isLocked) {
+      requireElevatedPermission(auth);
+    }
+
+    const ownerId = auth.user.id;
     await this.albumRepository.updateThumbnails();
 
     const albums = assetId
-      ? await this.albumRepository.getByAssetId(ownerId, assetId)
-      : await this.albumRepository.getAll(ownerId, rest);
+      ? await this.albumRepository.getByAssetId(ownerId, assetId, {
+          includeLocked: !!auth.session?.hasElevatedPermission,
+        })
+      : await this.albumRepository.getAll(ownerId, { ...rest, isLocked: isLocked ?? false });
 
     if (albums.length === 0) {
       return [];
@@ -113,12 +122,19 @@ export class AlbumService extends BaseService {
       }
     }
 
+    if (dto.isLocked) {
+      requireElevatedPermission(auth);
+    }
+
     const allowedAssetIdsSet = await this.checkAccess({
       auth,
-      permission: Permission.AssetShare,
+      permission: dto.isLocked ? Permission.AssetUpdate : Permission.AssetShare,
       ids: dto.assetIds || [],
     });
     const assetIds = [...allowedAssetIdsSet].map((id) => id);
+    if (dto.isLocked) {
+      await this.lockAssets(auth, assetIds);
+    }
 
     const userMetadata = await this.userRepository.getMetadata(auth.user.id);
 
@@ -128,6 +144,7 @@ export class AlbumService extends BaseService {
         description: dto.description,
         albumThumbnailAssetId: assetIds[0] || null,
         order: getPreferences(userMetadata).albums.defaultAssetOrder,
+        isLocked: dto.isLocked ?? false,
       },
       assetIds,
       [{ userId: auth.user.id, role: AlbumUserRole.Owner }, ...albumUsers],
@@ -156,6 +173,12 @@ export class AlbumService extends BaseService {
         throw new BadRequestException('Invalid album thumbnail');
       }
     }
+
+    if (dto.isLocked !== undefined && dto.isLocked !== album.isLocked) {
+      requireElevatedPermission(auth);
+      await this.requireAccess({ auth, permission: Permission.AlbumDelete, ids: [id] });
+      await (dto.isLocked ? this.lockAlbum(auth, album) : this.unlockAlbum(auth, album));
+    }
     const updatedAlbum = await this.albumRepository.update(
       album.id,
       {
@@ -165,10 +188,14 @@ export class AlbumService extends BaseService {
         albumThumbnailAssetId: dto.albumThumbnailAssetId,
         isActivityEnabled: dto.isActivityEnabled,
         order: dto.order,
+        isLocked: dto.isLocked,
       },
       auth.user.id,
     );
-    this.resourceRepository.send({ userIds: getUserIds(album), changed: [Resource.album({ id })] });
+    this.resourceRepository.send({
+      userIds: getUserIds(album),
+      changed: [Resource.album({ id }), ...(dto.isLocked === undefined ? [] : [Resource.albumStatistics()])],
+    });
 
     return this.mapWithMetadata(updatedAlbum);
   }
@@ -193,13 +220,23 @@ export class AlbumService extends BaseService {
 
   async addAssets(auth: AuthDto, id: string, dto: BulkIdsDto): Promise<BulkIdResponseDto[]> {
     const album = await this.findOrFail(id, auth.user.id);
-    await this.requireAccess({ auth, permission: Permission.AlbumAssetCreate, ids: [id] });
+    const isLockedWrite = album.isLocked && !auth.sharedLink;
+    if (isLockedWrite) {
+      const allowedAlbumIds = await this.getLockedAlbumWriteAccess(auth, [id]);
+      if (!allowedAlbumIds.has(id)) {
+        throw new BadRequestException(`Not found or no ${Permission.AlbumAssetCreate} access`);
+      }
+    } else {
+      await this.requireAccess({ auth, permission: Permission.AlbumAssetCreate, ids: [id] });
+    }
 
-    const results = await addAssets(
-      auth,
-      { access: this.accessRepository, bulk: this.albumRepository },
-      { parentId: id, assetIds: dto.ids, permission: Permission.AssetShare },
-    );
+    const results = isLockedWrite
+      ? await this.addOwnAssetsToLockedAlbum(auth, id, dto.ids)
+      : await addAssets(
+          auth,
+          { access: this.accessRepository, bulk: this.albumRepository },
+          { parentId: id, assetIds: dto.ids, permission: Permission.AssetShare },
+        );
 
     const { id: firstNewAssetId } = results.find(({ success }) => success) || {};
     if (firstNewAssetId) {
@@ -228,31 +265,43 @@ export class AlbumService extends BaseService {
       error: BulkIdErrorReason.DUPLICATE,
     };
 
-    const allowedAlbumIds = await this.checkAccess({
-      auth,
-      permission: Permission.AlbumAssetCreate,
-      ids: dto.albumIds,
-    });
+    const allowedAlbumIds = auth.sharedLink
+      ? await this.checkAccess({ auth, permission: Permission.AlbumAssetCreate, ids: dto.albumIds })
+      : await this.getLockedAlbumWriteAccess(auth, dto.albumIds);
     if (allowedAlbumIds.size === 0) {
       results.error = BulkIdErrorReason.NO_PERMISSION;
       return results;
     }
 
-    const allowedAssetIds = await this.checkAccess({ auth, permission: Permission.AssetShare, ids: dto.assetIds });
-    if (allowedAssetIds.size === 0) {
+    const albums = await Promise.all([...allowedAlbumIds].map((albumId) => this.findOrFail(albumId, auth.user.id)));
+    const hasLockedAlbum = albums.some((album) => album.isLocked);
+    const lockableAssetIds =
+      hasLockedAlbum && !auth.sharedLink
+        ? await this.accessRepository.asset.checkOwnerAccess(auth.user.id, new Set(dto.assetIds), true)
+        : new Set<string>();
+    const accessibleAssetIds = await this.checkAccess({ auth, permission: Permission.AssetShare, ids: dto.assetIds });
+    const shareableAssetIds = accessibleAssetIds.difference(lockableAssetIds);
+    if (shareableAssetIds.size === 0 && lockableAssetIds.size === 0) {
       results.error = BulkIdErrorReason.NO_PERMISSION;
       return results;
     }
 
     const albumAssetValues: { albumId: string; assetId: string }[] = [];
+    const assetIdsToLock = new Set<string>();
     const events: { id: string; userIds: string[]; recipientIds: string[] }[] = [];
-    for (const albumId of allowedAlbumIds) {
+    for (const album of albums) {
+      const albumId = album.id;
+      const allowedAssetIds = album.isLocked ? lockableAssetIds : shareableAssetIds;
       const existingAssetIds = await this.albumRepository.getAssetIds(albumId, [...allowedAssetIds]);
       const notPresentAssetIds = [...allowedAssetIds.difference(existingAssetIds)];
       if (notPresentAssetIds.length === 0) {
         continue;
       }
-      const album = await this.findOrFail(albumId, auth.user.id);
+      if (album.isLocked) {
+        for (const assetId of notPresentAssetIds) {
+          assetIdsToLock.add(assetId);
+        }
+      }
       results.error = undefined;
       results.success = true;
 
@@ -274,6 +323,7 @@ export class AlbumService extends BaseService {
     }
 
     await this.albumRepository.addAssetIdsToAlbums(albumAssetValues);
+    await this.lockAssets(auth, [...assetIdsToLock]);
     for (const event of events) {
       this.resourceRepository.send({ userIds: event.userIds, changed: [Resource.album(event)] });
       await this.eventRepository.emit('AlbumUpdate', event);
@@ -289,7 +339,12 @@ export class AlbumService extends BaseService {
     const results = await removeAssets(
       auth,
       { access: this.accessRepository, bulk: this.albumRepository },
-      { parentId: id, assetIds: dto.ids, canAlwaysRemove: Permission.AlbumDelete },
+      {
+        parentId: id,
+        assetIds: dto.ids,
+        canAlwaysRemove: Permission.AlbumDelete,
+        permission: album.isLocked ? Permission.AssetUpdate : Permission.AssetShare,
+      },
     );
 
     const removedIds = results.filter(({ success }) => success).map(({ id }) => id);
@@ -386,6 +441,96 @@ export class AlbumService extends BaseService {
 
     await this.albumUserRepository.update({ albumId: id, userId }, { role: dto.role });
     this.resourceRepository.send({ userIds: getUserIds(album), changed: [Resource.album({ id })] });
+  }
+
+  private async getLockedAlbumWriteAccess(auth: AuthDto, albumIds: string[]) {
+    const ids = new Set(albumIds);
+    const isOwner = await this.accessRepository.album.checkOwnerAccess(auth.user.id, ids, true);
+    const isEditor = await this.accessRepository.album.checkSharedAlbumAccess(
+      auth.user.id,
+      ids.difference(isOwner),
+      AlbumUserRole.Editor,
+      true,
+    );
+    return isOwner.union(isEditor);
+  }
+
+  private async addOwnAssetsToLockedAlbum(
+    auth: AuthDto,
+    albumId: string,
+    assetIds: string[],
+  ): Promise<BulkIdResponseDto[]> {
+    const existingAssetIds = await this.albumRepository.getAssetIds(albumId, assetIds);
+    const ownedAssetIds = await this.accessRepository.asset.checkOwnerAccess(
+      auth.user.id,
+      new Set(assetIds.filter((assetId) => !existingAssetIds.has(assetId))),
+      true,
+    );
+
+    const results: BulkIdResponseDto[] = [];
+    const addedAssetIds = new Set<string>();
+    for (const assetId of assetIds) {
+      if (existingAssetIds.has(assetId) || addedAssetIds.has(assetId)) {
+        results.push({ id: assetId, success: false, error: BulkIdErrorReason.DUPLICATE });
+      } else if (ownedAssetIds.has(assetId)) {
+        addedAssetIds.add(assetId);
+        results.push({ id: assetId, success: true });
+      } else {
+        results.push({ id: assetId, success: false, error: BulkIdErrorReason.NO_PERMISSION });
+      }
+    }
+
+    await this.albumRepository.addAssetIds(albumId, [...addedAssetIds]);
+    await this.lockAssets(auth, [...addedAssetIds]);
+    return results;
+  }
+
+  private async lockAssets(auth: AuthDto, assetIds: string[]) {
+    if (assetIds.length === 0) {
+      return;
+    }
+
+    await this.assetRepository.updateAll(assetIds, { visibility: AssetVisibility.Locked });
+    await this.albumRepository.removeAssetsFromAlbums(assetIds, { isLocked: false });
+    this.resourceRepository.send({
+      userIds: [auth.user.id],
+      changed: [Resource.assets(), Resource.assetStatistics(), Resource.albums(), ...ASSET_VISIBILITY_DEPENDENT_PATHS],
+    });
+  }
+
+  private async lockAlbum(auth: AuthDto, album: MapAlbumDto) {
+    const assets = await this.albumRepository.getAssetsForLockChange(album.id);
+    const ownAssetIds = assets.filter(({ ownerId }) => ownerId === auth.user.id).map(({ id }) => id);
+    const otherAssetIds = assets.filter(({ ownerId }) => ownerId !== auth.user.id).map(({ id }) => id);
+
+    await this.albumRepository.removeAssetIds(album.id, otherAssetIds);
+    await this.lockAssets(auth, ownAssetIds);
+
+    const removedLinks = await this.sharedLinkRepository.removeUnprotectedForAlbum(album.id);
+    for (const [userId, links] of Map.groupBy(removedLinks, ({ userId }) => userId)) {
+      this.resourceRepository.send({ userIds: [userId], deleted: links.map((link) => Resource.sharedLink(link)) });
+    }
+  }
+
+  private async unlockAlbum(auth: AuthDto, album: MapAlbumDto) {
+    const assets = await this.albumRepository.getAssetsForLockChange(album.id);
+    const assetIdsToUnlock = assets
+      .filter(({ ownerId, inOtherLockedAlbum }) => ownerId === auth.user.id && !inOtherLockedAlbum)
+      .map(({ id }) => id);
+    const assetIdsToRemove = assets
+      .filter(({ ownerId, inOtherLockedAlbum }) => ownerId !== auth.user.id || inOtherLockedAlbum)
+      .map(({ id }) => id);
+
+    await this.albumRepository.removeAssetIds(album.id, assetIdsToRemove);
+    if (assetIdsToUnlock.length > 0) {
+      await this.assetRepository.updateAll(assetIdsToUnlock, { visibility: AssetVisibility.Timeline });
+      await this.partnerRepository.removeLockedAssetsForAll(assetIdsToUnlock);
+    }
+
+    this.resourceRepository.send({
+      userIds: [auth.user.id],
+      changed: [Resource.assets(), Resource.assetStatistics(), Resource.albums(), ...ASSET_VISIBILITY_DEPENDENT_PATHS],
+    });
   }
 
   private findOrFail(id: string, authUserId: string) {

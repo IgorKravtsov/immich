@@ -83,7 +83,17 @@ where
   and (
     (
       "asset"."deletedAt" is null
-      and "asset"."visibility" != 'locked'
+      and (
+        "asset"."visibility" != 'locked'
+        or exists (
+          select
+          from
+            "album"
+          where
+            "album"."id" = "activity"."albumId"
+            and "album"."isLocked" = $5
+        )
+      )
     )
     or "asset"."id" is null
   )

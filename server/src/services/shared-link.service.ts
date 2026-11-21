@@ -12,11 +12,13 @@ import {
   SharedLinkSearchDto,
   mapSharedLink,
 } from 'src/dtos/shared-link.dto.js';
-import { Permission, SharedLinkType } from 'src/enum.js';
+import { AssetVisibility, Permission, SharedLinkType } from 'src/enum.js';
 import { Resource } from 'src/resource-paths.js';
 import { BaseService } from 'src/services/base.service.js';
 import { asDateTimeString } from 'src/utils/date.js';
 import { OpenGraphTags, findOrFail, getExternalDomain } from 'src/utils/misc.js';
+
+const LOCKED_LINK_PASSWORD_REQUIRED = 'A password is required to share locked content';
 
 @Injectable()
 export class SharedLinkService extends BaseService {
@@ -76,6 +78,9 @@ export class SharedLinkService extends BaseService {
           throw new BadRequestException('Invalid albumId');
         }
         await this.requireAccess({ auth, permission: Permission.AlbumShare, ids: [dto.albumId] });
+        if (!dto.password && (await this.isLockedAlbum(dto.albumId))) {
+          throw new BadRequestException(LOCKED_LINK_PASSWORD_REQUIRED);
+        }
         break;
       }
 
@@ -84,7 +89,10 @@ export class SharedLinkService extends BaseService {
           throw new BadRequestException('Invalid assetIds');
         }
 
-        await this.requireAccess({ auth, permission: Permission.AssetShare, ids: dto.assetIds });
+        const allowedAssetIds = await this.getShareableAssetIds(auth, dto.assetIds, !!dto.password);
+        if (allowedAssetIds.size !== new Set(dto.assetIds).size) {
+          throw new BadRequestException(`Not found or no ${Permission.AssetShare} access`);
+        }
 
         break;
       }
@@ -129,7 +137,11 @@ export class SharedLinkService extends BaseService {
   }
 
   async update(auth: AuthDto, id: string, dto: SharedLinkEditDto) {
-    await this.findOrFail(auth.user.id, id);
+    const existing = await this.findOrFail(auth.user.id, id);
+    if (dto.password !== undefined && !dto.password && (await this.hasLockedContent(existing))) {
+      throw new BadRequestException(LOCKED_LINK_PASSWORD_REQUIRED);
+    }
+
     try {
       const sharedLink = await this.sharedLinkRepository.update({
         id,
@@ -164,6 +176,34 @@ export class SharedLinkService extends BaseService {
     });
   }
 
+  private async getShareableAssetIds(auth: AuthDto, assetIds: string[], hasPassword: boolean) {
+    const shareable = await this.checkAccess({ auth, permission: Permission.AssetShare, ids: assetIds });
+    const remaining = assetIds.filter((assetId) => !shareable.has(assetId));
+    if (remaining.length === 0 || !auth.session?.hasElevatedPermission) {
+      return shareable;
+    }
+
+    const owned = await this.checkAccess({ auth, permission: Permission.AssetUpdate, ids: remaining });
+    if (owned.size > 0 && !hasPassword) {
+      throw new BadRequestException(LOCKED_LINK_PASSWORD_REQUIRED);
+    }
+
+    return shareable.union(owned);
+  }
+
+  private async isLockedAlbum(albumId: string) {
+    const album = await this.albumRepository.getById(albumId);
+    return !!album?.isLocked;
+  }
+
+  private async hasLockedContent(sharedLink: { albumId: string | null; assets: { visibility: AssetVisibility }[] }) {
+    if (sharedLink.albumId) {
+      return this.isLockedAlbum(sharedLink.albumId);
+    }
+
+    return sharedLink.assets.some((asset) => asset.visibility === AssetVisibility.Locked);
+  }
+
   // TODO: replace `userId` with permissions and access control checks
   private findOrFail(userId: string, id: string) {
     return findOrFail(() => this.sharedLinkRepository.get(userId, id), 'Shared link');
@@ -177,11 +217,7 @@ export class SharedLinkService extends BaseService {
 
     const existingAssetIds = new Set(sharedLink.assets.map((asset) => asset.id));
     const notPresentAssetIds = dto.assetIds.filter((assetId) => !existingAssetIds.has(assetId));
-    const allowedAssetIds = await this.checkAccess({
-      auth,
-      permission: Permission.AssetShare,
-      ids: notPresentAssetIds,
-    });
+    const allowedAssetIds = await this.getShareableAssetIds(auth, notPresentAssetIds, !!sharedLink.password);
 
     const results: AssetIdsResponseDto[] = [];
     for (const assetId of dto.assetIds) {

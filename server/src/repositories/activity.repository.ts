@@ -86,7 +86,15 @@ export class ActivityRepository {
       .where('activity.albumId', '=', albumId)
       .where(({ or, and, eb }) =>
         or([
-          and([eb('asset.deletedAt', 'is', null), eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked))]),
+          and([
+            eb('asset.deletedAt', 'is', null),
+            or([
+              eb('asset.visibility', '!=', sql.lit(AssetVisibility.Locked)),
+              eb.exists(
+                eb.selectFrom('album').whereRef('album.id', '=', 'activity.albumId').where('album.isLocked', '=', true),
+              ),
+            ]),
+          ]),
           eb('asset.id', 'is', null),
         ]),
       )

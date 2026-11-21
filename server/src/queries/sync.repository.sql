@@ -60,6 +60,7 @@ select
   "album"."albumThumbnailAssetId" as "thumbnailAssetId",
   "album"."isActivityEnabled",
   "album"."order",
+  "album"."isLocked",
   "album"."updateId"
 from
   "album" as "album"
@@ -1117,6 +1118,36 @@ where
   )
 order by
   "stack"."updateId" asc
+
+-- SyncRepository.partnerLockedAsset.getDeletes
+select
+  "id",
+  "sharedById",
+  "sharedWithId",
+  "assetId"
+from
+  "partner_locked_asset_audit" as "partner_locked_asset_audit"
+where
+  "partner_locked_asset_audit"."id" < $1
+  and "partner_locked_asset_audit"."id" > $2
+  and "sharedWithId" = $3
+order by
+  "partner_locked_asset_audit"."id" asc
+
+-- SyncRepository.partnerLockedAsset.getUpserts
+select
+  "sharedById",
+  "sharedWithId",
+  "assetId",
+  "updateId"
+from
+  "partner_locked_asset" as "partner_locked_asset"
+where
+  "partner_locked_asset"."updateId" < $1
+  and "partner_locked_asset"."updateId" > $2
+  and "sharedWithId" = $3
+order by
+  "partner_locked_asset"."updateId" asc
 
 -- SyncRepository.person.getDeletes
 select

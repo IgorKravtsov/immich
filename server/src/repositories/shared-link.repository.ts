@@ -226,6 +226,16 @@ export class SharedLinkRepository {
     await this.db.deleteFrom('shared_link').where('shared_link.id', '=', id).execute();
   }
 
+  @GenerateSql({ params: [DummyValue.UUID] })
+  removeUnprotectedForAlbum(albumId: string) {
+    return this.db
+      .deleteFrom('shared_link')
+      .where('shared_link.albumId', '=', albumId)
+      .where((eb) => eb.or([eb('shared_link.password', 'is', null), eb('shared_link.password', '=', '')]))
+      .returning(['shared_link.id', 'shared_link.userId'])
+      .execute();
+  }
+
   @ChunkedArray({ paramIndex: 1 })
   async addAssets(id: string, assetIds: string[]) {
     if (assetIds.length === 0) {

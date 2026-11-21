@@ -31,6 +31,9 @@ import { getExternalDomain } from 'src/utils/misc.js';
 import { isEqualObject } from 'src/utils/object.js';
 import { getPreferences } from 'src/utils/preferences.js';
 
+const getAlbumDisplayName = (album: { albumName: string; isLocked: boolean }) =>
+  album.isLocked ? 'Locked album' : album.albumName;
+
 @Injectable()
 export class NotificationService extends BaseService {
   private static albumUpdateEmailDelayMs = 300_000;
@@ -365,7 +368,7 @@ export class NotificationService extends BaseService {
       return JobStatus.Skipped;
     }
 
-    const attachment = await this.getAlbumThumbnailAttachment(album);
+    const attachment = album.isLocked ? undefined : await this.getAlbumThumbnailAttachment(album);
 
     const { server, templates } = await this.getConfig({ withCache: false });
     const { html, text } = await this.emailRepository.renderEmail({
@@ -373,7 +376,7 @@ export class NotificationService extends BaseService {
       data: {
         baseUrl: getExternalDomain(server),
         albumId: album.id,
-        albumName: album.albumName,
+        albumName: getAlbumDisplayName(album),
         senderName,
         recipientName: recipient.name,
         cid: attachment ? attachment.cid : undefined,
@@ -385,7 +388,9 @@ export class NotificationService extends BaseService {
       name: JobName.SendMail,
       data: {
         to: recipient.email,
-        subject: `You have been added to a shared album - ${album.albumName}`,
+        subject: album.isLocked
+          ? 'You have been added to a locked album'
+          : `You have been added to a shared album - ${album.albumName}`,
         html,
         text,
         imageAttachments: attachment ? [attachment] : undefined,
@@ -410,7 +415,7 @@ export class NotificationService extends BaseService {
 
     await this.sendAlbumLocalNotification(album, recipientId, NotificationType.AlbumUpdate);
 
-    const attachment = await this.getAlbumThumbnailAttachment(album);
+    const attachment = album.isLocked ? undefined : await this.getAlbumThumbnailAttachment(album);
 
     const { server, templates } = await this.getConfig({ withCache: false });
 
@@ -430,7 +435,7 @@ export class NotificationService extends BaseService {
       data: {
         baseUrl: getExternalDomain(server),
         albumId: album.id,
-        albumName: album.albumName,
+        albumName: getAlbumDisplayName(album),
         recipientName: user.name,
         cid: attachment ? attachment.cid : undefined,
       },
@@ -441,7 +446,9 @@ export class NotificationService extends BaseService {
       name: JobName.SendMail,
       data: {
         to: user.email,
-        subject: `New media has been added to an album - ${album.albumName}`,
+        subject: album.isLocked
+          ? 'New media has been added to a locked album'
+          : `New media has been added to an album - ${album.albumName}`,
         html,
         text,
         imageAttachments: attachment ? [attachment] : undefined,
@@ -510,9 +517,13 @@ export class NotificationService extends BaseService {
       type,
       level: isInvite ? NotificationLevel.Success : NotificationLevel.Info,
       title: isInvite ? 'Shared Album Invitation' : 'Shared Album Update',
-      description: isInvite
-        ? `${senderName} shared an album (${album.albumName}) with you`
-        : `New media has been added to the album (${album.albumName})`,
+      description: album.isLocked
+        ? isInvite
+          ? `${senderName} gave you access to a locked album`
+          : 'New media has been added to a locked album'
+        : isInvite
+          ? `${senderName} shared an album (${album.albumName}) with you`
+          : `New media has been added to the album (${album.albumName})`,
       data: JSON.stringify({ albumId: album.id }),
     });
 

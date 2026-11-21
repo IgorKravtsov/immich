@@ -72,10 +72,14 @@ export class PartnerController {
   @Authenticated({ permission: Permission.PartnerRead })
   @Endpoint({
     summary: 'Retrieve locked assets shared with a partner',
-    description: 'Retrieve the IDs of locked assets that the given partner is allowed to see. Requires an elevated session.',
+    description:
+      'Retrieve the IDs of locked assets that the given partner is allowed to see. Requires an elevated session.',
     history: new HistoryBuilder().added('v3.4.0'),
   })
-  getPartnerLockedAssets(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<PartnerLockedAssetsResponseDto> {
+  getPartnerLockedAssets(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+  ): Promise<PartnerLockedAssetsResponseDto> {
     return this.service.getLockedAssets(auth, id);
   }
 
@@ -84,7 +88,8 @@ export class PartnerController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @Endpoint({
     summary: 'Share locked assets with a partner',
-    description: 'Allow the given partner to see these locked assets in their locked folder. Requires an elevated session.',
+    description:
+      'Allow the given partner to see these locked assets in their locked folder. Requires an elevated session.',
     history: new HistoryBuilder().added('v3.4.0'),
   })
   addPartnerLockedAssets(
