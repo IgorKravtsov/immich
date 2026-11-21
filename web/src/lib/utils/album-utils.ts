@@ -20,8 +20,12 @@ import { goto } from '$app/navigation';
 Albums General Management
 -------------------------
 */
-export const createAlbumAndRedirect = (name?: string, assetIds?: string[]) =>
-  executeMutation(createAlbumMutation, [{ createAlbumDto: { albumName: name ?? '', assetIds } }], {
+export const createAlbumAndRedirect = ({
+  name = '',
+  assetIds,
+  isLocked,
+}: { name?: string; assetIds?: string[]; isLocked?: boolean } = {}) =>
+  executeMutation(createAlbumMutation, [{ createAlbumDto: { albumName: name, assetIds, isLocked } }], {
     onSuccess: (album) => void goto(Route.viewAlbum(album)),
   });
 

@@ -4,6 +4,7 @@ import { Route } from '#lib/route.ts';
 import { factory } from '#test/unit/factories.ts';
 import { test } from '#test/unit/fixtures.ts';
 import { ReactionType } from '@immich/sdk';
+import { isRedirect } from '@sveltejs/kit';
 import { expect } from 'vitest';
 import { page, userEvent } from 'vitest/browser';
 import Page from './+page.svelte';
@@ -242,4 +243,85 @@ test('leaves an album', async ({ data, router, render, settle, api, app }) => {
   await settle();
 
   expect(api.removeUserFromAlbum).toHaveBeenCalledWith({ params: { id: album.id, userId: 'me' } });
+});
+
+test('owner moves an album to the locked folder', async ({ data, router, render, settle, api, app }) => {
+  data.setAuthStatus({ pinCode: true, isElevated: true });
+  const album = factory.album({ albumUsers: factory.albumUsers({ owner: data.user }) });
+  data.addAlbums(album);
+  await router.goto(Route.viewAlbum(album), { albumId: album.id });
+  await render(Page, load);
+  await settle();
+
+  await app.album.optionsMenuButton.click();
+  await app.album.lockMenuItem.click();
+  await app.cancelButton.click();
+  await settle();
+  expect(api.updateAlbumInfo).not.toHaveBeenCalled();
+
+  await app.album.optionsMenuButton.click();
+  await app.album.lockMenuItem.click();
+  await app.dialogButton('move_to_locked_folder').click();
+  await settle();
+
+  expect(api.updateAlbumInfo).toHaveBeenCalledWith({ params: { id: album.id }, body: { isLocked: true } });
+  expect(router.url.pathname).toBe(Route.viewAlbum({ id: album.id, isLocked: true }));
+});
+
+test('asks for the PIN code before moving an album to the locked folder', async ({
+  data,
+  router,
+  render,
+  settle,
+  api,
+  app,
+}) => {
+  data.setAuthStatus({ pinCode: true, isElevated: false });
+  const album = factory.album({ albumUsers: factory.albumUsers({ owner: data.user }) });
+  data.addAlbums(album);
+  await router.goto(Route.viewAlbum(album), { albumId: album.id });
+  await render(Page, load);
+  await settle();
+
+  await app.album.optionsMenuButton.click();
+  await app.album.lockMenuItem.click();
+  await app.dialogButton('move_to_locked_folder').click();
+  await settle();
+  expect(api.updateAlbumInfo).not.toHaveBeenCalled();
+
+  await expect.element(app.pinCodeDialog).toBeVisible();
+  app.pinCodeDialog.element().querySelector('input')!.focus();
+  await userEvent.keyboard('123456');
+  await settle();
+
+  expect(api.unlockAuthSession).toHaveBeenCalledWith({ body: { pinCode: '123456' } });
+  expect(api.updateAlbumInfo).toHaveBeenCalledWith({ params: { id: album.id }, body: { isLocked: true } });
+});
+
+test('only the owner can move an album to the locked folder', async ({ data, router, render, settle, app }) => {
+  const album = factory.album({ albumUsers: factory.albumUsers({ owner: factory.user(), viewers: [data.user] }) });
+  data.addAlbums(album);
+  await router.goto(Route.viewAlbum(album), { albumId: album.id });
+  await render(Page, load);
+  await settle();
+
+  await app.album.optionsMenuButton.click();
+
+  await expect.element(app.album.leaveMenuItem).toBeVisible();
+  await expect.element(app.album.lockMenuItem).not.toBeInTheDocument();
+});
+
+test('redirects a locked album to the locked folder', async ({ data, router }) => {
+  const album = factory.album({ albumUsers: factory.albumUsers({ owner: data.user }), isLocked: true });
+  data.addAlbums(album);
+  await router.goto(Route.viewAlbum(album), { albumId: album.id });
+
+  const result = await load({
+    url: new URL(Route.viewAlbumAsset({ albumId: album.id, assetId: 'asset-id' }) + '?at=x', location.origin),
+    params: { albumId: album.id },
+  } as never).catch((error: unknown) => (isRedirect(error) ? { redirect: error.location } : Promise.reject(error)));
+
+  expect(result).toEqual({
+    redirect: Route.viewAlbumAsset({ albumId: album.id, assetId: 'asset-id', isLocked: true }) + '?at=x',
+  });
 });

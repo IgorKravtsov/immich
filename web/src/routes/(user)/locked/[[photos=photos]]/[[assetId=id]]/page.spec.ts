@@ -1,6 +1,7 @@
 import { authManager } from '#lib/managers/auth-manager.svelte.ts';
 import { Route } from '#lib/route.ts';
 import { test } from '#test/unit/fixtures.ts';
+import { AssetVisibility } from '@immich/sdk';
 import { isRedirect } from '@sveltejs/kit';
 import { expect } from 'vitest';
 import Page from './+page.svelte';
@@ -95,4 +96,17 @@ test('opens the locked folder after locking and unlocking again', async ({
   data.setAuthStatus({ isElevated: true });
 
   await expect(runLoad(Route.locked())).resolves.toMatchObject({ meta: { title: 'locked_folder' } });
+});
+
+test('shows own and partner-shared locked photos with tabs', async ({ data, router, render, settle, api, app }) => {
+  data.setAuthStatus({ pinCode: true, isElevated: true });
+  await router.goto(Route.locked());
+  await render(Page, load);
+  await settle();
+
+  await expect.element(app.lockedFolder.tab('photos')).toHaveAttribute('aria-current', 'page');
+  await expect.element(app.lockedFolder.tab('albums')).toHaveAttribute('href', Route.lockedAlbums());
+  expect(api.getTimeBuckets).toHaveBeenCalledWith({
+    params: expect.objectContaining({ visibility: AssetVisibility.Locked, withPartners: true }),
+  });
 });

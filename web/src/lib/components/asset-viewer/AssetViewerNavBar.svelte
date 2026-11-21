@@ -135,6 +135,7 @@
 
         <ActionMenuItem action={Actions.AddToAlbum} />
         <ActionMenuItem action={Actions.RemoveFromAlbum} />
+        <ActionMenuItem action={Actions.ShowToPartners} />
 
         <ActionMenuItem action={StackActions.AddUploads} />
         <ActionMenuItem action={StackActions.Unstack} />

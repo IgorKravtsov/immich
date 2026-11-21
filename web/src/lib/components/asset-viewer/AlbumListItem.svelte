@@ -5,7 +5,8 @@
   import { normalizeSearchString } from '#lib/utils/string-utils.ts';
   import { type AlbumResponseDto } from '@immich/sdk';
   import { Icon } from '@immich/ui';
-  import { mdiCheckCircle } from '@mdi/js';
+  import { mdiCheckCircle, mdiLock } from '@mdi/js';
+  import { t } from 'svelte-i18n';
   import type { Attachment } from 'svelte/attachments';
   import AlbumListItemDetails from './AlbumListItemDetails.svelte';
 
@@ -145,7 +146,12 @@
       {/if}
     </span>
     <span class="flex h-full flex-col items-start justify-center overflow-hidden">
-      <span class="w-full shrink truncate">{albumNameArray[0]}<b>{albumNameArray[1]}</b>{albumNameArray[2]}</span>
+      <span class="flex w-full shrink items-center gap-1 truncate">
+        {#if album.isLocked}
+          <Icon icon={mdiLock} size="16" class="shrink-0 text-primary" aria-label={$t('locked_album')} />
+        {/if}
+        <span class="truncate">{albumNameArray[0]}<b>{albumNameArray[1]}</b>{albumNameArray[2]}</span>
+      </span>
       <span class="flex gap-1 text-sm">
         <AlbumListItemDetails {album} />
       </span>

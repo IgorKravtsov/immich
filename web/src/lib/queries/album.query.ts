@@ -61,6 +61,12 @@ export const getRecentAlbumsQuery = () =>
       [...albums].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()).slice(0, 3),
   });
 
+export const getLockedAlbumsQuery = () =>
+  queryOptions({
+    queryKey: QueryKeys.albums({ isLocked: true }),
+    queryFn: ({ signal }) => getAllAlbums({ isLocked: true }, { signal }),
+  });
+
 export const getAlbumQuery = (id: string) =>
   queryOptions({
     ...getAllAlbumsQuery(),

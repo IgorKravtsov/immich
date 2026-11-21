@@ -5,7 +5,13 @@
     AlbumModalRowType,
     isSelectableRowType,
   } from '#lib/components/shared-components/album-selection/album-selection-utils.ts';
-  import { createAlbumMutation, getAllAlbumsQuery, getRecentAlbumsQuery } from '#lib/queries/album.query.ts';
+  import {
+    createAlbumMutation,
+    getAllAlbumsQuery,
+    getLockedAlbumsQuery,
+    getRecentAlbumsQuery,
+  } from '#lib/queries/album.query.ts';
+  import { getAuthStatusQuery } from '#lib/queries/auth.query.ts';
   import { executeMutation, queryClient } from '#lib/queries/client.ts';
   import { albumViewSettings } from '#lib/stores/preferences.store.ts';
   import { type AlbumResponseDto } from '@immich/sdk';
@@ -16,23 +22,44 @@
   import AlbumListItem from '../components/asset-viewer/AlbumListItem.svelte';
   import NewAlbumListItem from '../components/shared-components/album-selection/NewAlbumListItem.svelte';
 
-  const queries = {
-    albums: createQuery(getAllAlbumsQuery, () => queryClient),
-    recentAlbums: createQuery(getRecentAlbumsQuery, () => queryClient),
-  };
-
-  const albums = $derived(queries.albums.data ?? []);
-  const recentAlbums = $derived(queries.recentAlbums.data ?? []);
-  const loading = $derived(queries.albums.isPending);
-  let search = $state('');
-  let selectedRowIndex: number = $state(-1);
-
   type Props = {
     onClose: (albums?: AlbumResponseDto[]) => void;
     selectedItemsCount?: number;
+    showLocked?: boolean;
+    lockedOnly?: boolean;
   };
 
-  let { onClose, selectedItemsCount }: Props = $props();
+  let { onClose, selectedItemsCount, showLocked = false, lockedOnly = false }: Props = $props();
+
+  const authStatusQuery = createQuery(
+    () => ({ ...getAuthStatusQuery(), enabled: showLocked || lockedOnly }),
+    () => queryClient,
+  );
+  const isElevated = $derived(!!authStatusQuery.data?.isElevated && !!authStatusQuery.data?.pinCode);
+
+  const queries = {
+    albums: createQuery(
+      () => ({ ...getAllAlbumsQuery(), enabled: !lockedOnly }),
+      () => queryClient,
+    ),
+    recentAlbums: createQuery(
+      () => ({ ...getRecentAlbumsQuery(), enabled: !lockedOnly }),
+      () => queryClient,
+    ),
+    lockedAlbums: createQuery(
+      () => ({ ...getLockedAlbumsQuery(), enabled: (showLocked || lockedOnly) && isElevated }),
+      () => queryClient,
+    ),
+  };
+
+  const lockedAlbums = $derived(isElevated ? (queries.lockedAlbums.data ?? []) : []);
+  const albums = $derived(
+    lockedOnly ? lockedAlbums : [...(queries.albums.data ?? []), ...(showLocked ? lockedAlbums : [])],
+  );
+  const recentAlbums = $derived(lockedOnly ? [] : (queries.recentAlbums.data ?? []));
+  const loading = $derived(lockedOnly ? queries.lockedAlbums.isPending : queries.albums.isPending);
+  let search = $state('');
+  let selectedRowIndex: number = $state(-1);
 
   const multiSelectedAlbumIds: string[] = $state([]);
   const multiSelectActive = $derived(multiSelectedAlbumIds.length > 0);
@@ -44,7 +71,7 @@
   const selectableRowCount = $derived(albumModalRows.filter((row) => isSelectableRowType(row.type)).length);
 
   const onNewAlbum = (name: string) =>
-    executeMutation(createAlbumMutation, [{ createAlbumDto: { albumName: name } }], {
+    executeMutation(createAlbumMutation, [{ createAlbumDto: { albumName: name, isLocked: lockedOnly || undefined } }], {
       onSuccess: (album) => onClose([album]),
     });
 

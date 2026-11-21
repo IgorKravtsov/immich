@@ -45,9 +45,10 @@ export const Route = {
 
   // albums
   albums: () => '/albums',
-  viewAlbum: ({ id }: { id: string }) => `/albums/${id}`,
-  viewAlbumAsset: ({ albumId, assetId }: { albumId: string; assetId: string }) =>
-    `/albums/${albumId}/photos/${assetId}`,
+  viewAlbum: ({ id, isLocked }: { id: string; isLocked?: boolean }) =>
+    isLocked ? `/locked/albums/${id}` : `/albums/${id}`,
+  viewAlbumAsset: ({ albumId, assetId, isLocked }: { albumId: string; assetId: string; isLocked?: boolean }) =>
+    `${Route.viewAlbum({ id: albumId, isLocked })}/photos/${assetId}`,
 
   // buy
   buy: () => '/buy',
@@ -93,6 +94,7 @@ export const Route = {
   archive: () => '/archive',
   favorites: () => '/favorites',
   locked: () => '/locked',
+  lockedAlbums: () => '/locked/albums',
   trash: () => '/trash',
   viewTrashedAsset: ({ id }: { id: string }) => `/trash/photos/${id}`,
   recentlyAdded: () => '/recently-added',

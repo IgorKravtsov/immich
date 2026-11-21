@@ -94,6 +94,15 @@ export const createHandlers = (data: MockData): Handlers => {
       const partner = data.updatePartner(params.id, body.inTimeline);
       return partner ? { json: partner } : notFound;
     },
+    getPartnerLockedAssets: ({ params }) => ({ json: { assetIds: data.getPartnerLockedAssets(params.id) } }),
+    addPartnerLockedAssets: ({ params, body }) => {
+      data.addPartnerLockedAssets(params.id, body.assetIds);
+      return { status: 204 };
+    },
+    removePartnerLockedAssets: ({ params, body }) => {
+      data.removePartnerLockedAssets(params.id, body.assetIds);
+      return { status: 204 };
+    },
     getNotifications: () => ({ json: data.notifications }),
     setUserOnboarding: ({ body }) => ({ json: body }),
     updateAdminOnboarding: () => {
@@ -333,11 +342,15 @@ export const createHandlers = (data: MockData): Handlers => {
       return { status: 204 };
     },
 
-    getAllAlbums: ({ params = {} }) => ({ json: data.albumList(params.assetId) }),
+    getAllAlbums: ({ params = {} }) => ({ json: data.albumList(params) }),
     createAlbum: ({ body }) => ({ status: 201, json: data.createAlbum(body) }),
     deleteAlbum: ({ params }) => {
       data.deleteAlbum(params.id);
       return { status: 204 };
+    },
+    addUsersToAlbum: ({ params, body }) => {
+      const album = data.addUsersToAlbum(params.id, body.albumUsers);
+      return album ? { json: album } : notFound;
     },
     removeUserFromAlbum: ({ params }) =>
       data.removeUserFromAlbum(params.id, params.userId) ? { status: 204 } : notFound,

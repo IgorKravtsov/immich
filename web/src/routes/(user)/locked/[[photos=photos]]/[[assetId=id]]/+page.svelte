@@ -1,6 +1,8 @@
 <script lang="ts">
+  import ActionMenuItem from '#lib/components/ActionMenuItem.svelte';
   import OnEvents from '#lib/components/OnEvents.svelte';
   import UserPageLayout from '#lib/components/layouts/UserPageLayout.svelte';
+  import LockedFolderTabs from '#lib/components/locked-folder/LockedFolderTabs.svelte';
   import EmptyPlaceholder from '#lib/components/shared-components/EmptyPlaceholder.svelte';
   import ButtonContextMenu from '#lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import AssetSelectControlBar from '#lib/components/timeline/AssetSelectControlBar.svelte';
@@ -15,8 +17,10 @@
   import { assetMultiSelectManager } from '#lib/managers/asset-multi-select-manager.svelte.ts';
   import { TimelineManager } from '#lib/managers/timeline-manager/timeline-manager.svelte.ts';
   import { Route } from '#lib/route.ts';
+  import { getAssetBulkActions } from '#lib/services/asset.service.ts';
   import { getUserActions } from '#lib/services/user.service.ts';
   import { AssetVisibility } from '@immich/sdk';
+  import { ActionButton } from '@immich/ui';
   import { mdiDotsVertical } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { goto } from '$app/navigation';
@@ -29,7 +33,7 @@
   let { data }: Props = $props();
 
   let timelineManager = $state<TimelineManager>() as TimelineManager;
-  const options = { visibility: AssetVisibility.Locked };
+  const options = { visibility: AssetVisibility.Locked, withPartners: true };
 
   const handleEscape = () => {
     if (!assetMultiSelectManager.selectionActive) {
@@ -60,6 +64,10 @@
   hideNavbar={assetMultiSelectManager.selectionActive}
   scrollbar={false}
 >
+  {#snippet buttons()}
+    <LockedFolderTabs active="photos" />
+  {/snippet}
+
   <Timeline
     enableRouting={true}
     bind:timelineManager
@@ -77,13 +85,21 @@
 <!-- Multi-selection mode app bar -->
 {#if assetMultiSelectManager.selectionActive}
   <AssetSelectControlBar>
+    {const Actions = $derived(getAssetBulkActions($t))}
     <SelectAllAssets withText {timelineManager} assetInteraction={assetMultiSelectManager} />
-    <SetVisibilityAction unlock onVisibilitySet={handleMoveOffLockedFolder} />
+    {#if assetMultiSelectManager.isAllUserOwned}
+      <ActionButton action={Actions.CreateSharedLink} />
+      <ActionButton action={Actions.AddToAlbum} />
+      <SetVisibilityAction unlock onVisibilitySet={handleMoveOffLockedFolder} />
+    {/if}
     <ButtonContextMenu icon={mdiDotsVertical} title={$t('menu')}>
       <DownloadAction menuItem />
-      <ChangeDate menuItem />
-      <ChangeLocation menuItem />
-      <DeleteAssets menuItem force onAssetDelete={(assetIds) => timelineManager.removeAssets(assetIds)} />
+      {#if assetMultiSelectManager.isAllUserOwned}
+        <ActionMenuItem action={Actions.ShowToPartners} />
+        <ChangeDate menuItem />
+        <ChangeLocation menuItem />
+        <DeleteAssets menuItem force onAssetDelete={(assetIds) => timelineManager.removeAssets(assetIds)} />
+      {/if}
     </ButtonContextMenu>
   </AssetSelectControlBar>
 {/if}

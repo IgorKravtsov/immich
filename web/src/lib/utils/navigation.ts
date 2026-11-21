@@ -12,7 +12,8 @@ export const isPhotosRoute = (route?: string | null) => !!route?.startsWith('/(u
 const isSharedLinkSlugRoute = (route?: string | null) => !!route?.startsWith('/(user)/s/[slug]');
 export const isSharedLinkRoute = (route?: string | null) =>
   !!route?.startsWith('/(user)/share/[key]') || isSharedLinkSlugRoute(route);
-export const isAlbumsRoute = (route?: string | null) => !!route?.startsWith('/(user)/albums/[albumId=id]');
+export const isAlbumsRoute = (route?: string | null) =>
+  !!route?.startsWith('/(user)/albums/[albumId=id]') || !!route?.startsWith('/(user)/locked/albums/[albumId=id]');
 export const isPeopleRoute = (route?: string | null) => !!route?.startsWith('/(user)/people/[personId]');
 export const isLockedFolderRoute = (route?: string | null) => !!route?.startsWith('/(user)/locked');
 

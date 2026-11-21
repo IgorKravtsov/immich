@@ -4,17 +4,18 @@
   import { createSharedLinkMutation } from '#lib/queries/shared-link.query.ts';
   import { showSharedLinkQrCode } from '#lib/services/shared-link.service.ts';
   import { SharedLinkType } from '@immich/sdk';
-  import { FormModal } from '@immich/ui';
-  import { mdiLink } from '@mdi/js';
+  import { Alert, FormModal } from '@immich/ui';
+  import { mdiLink, mdiLockOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   interface Props {
     onClose: () => void;
     albumId?: string;
     assetIds?: string[];
+    requirePassword?: boolean;
   }
 
-  let { onClose, albumId, assetIds }: Props = $props();
+  let { onClose, albumId, assetIds, requirePassword = false }: Props = $props();
 
   let description = $state('');
   let allowDownload = $state(true);
@@ -55,7 +56,12 @@
   {onClose}
   {onSubmit}
   submitText={$t('create_link')}
+  disabled={requirePassword && !password}
 >
+  {#if requirePassword}
+    <Alert color="warning" icon={mdiLockOutline} title={$t('shared_link_password_required')} size="small" />
+  {/if}
+
   {#if type === SharedLinkType.Album}
     <div>{$t('album_with_link_access')}</div>
   {/if}

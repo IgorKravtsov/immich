@@ -5,6 +5,7 @@ import { authManager } from '#lib/managers/auth-manager.svelte.ts';
 import { eventManager } from '#lib/managers/event-manager.svelte.ts';
 import type { TimelineAsset } from '#lib/managers/timeline-manager/types.ts';
 import AssetAddToAlbumModal from '#lib/modals/AssetAddToAlbumModal.svelte';
+import AssetPartnerAccessModal from '#lib/modals/AssetPartnerAccessModal.svelte';
 import AssetTagModal from '#lib/modals/AssetTagModal.svelte';
 import ProfileImageCropperModal from '#lib/modals/ProfileImageCropperModal.svelte';
 import SharedLinkCreateModal from '#lib/modals/SharedLinkCreateModal.svelte';
@@ -33,6 +34,7 @@ import {
 import { modalManager, toastManager, type ActionItem } from '@immich/ui';
 import {
   mdiAccountCircleOutline,
+  mdiAccountMultipleOutline,
   mdiAlertOutline,
   mdiArchiveArrowDownOutline,
   mdiArchiveArrowUpOutline,
@@ -69,6 +71,9 @@ export const getAssetBulkActions = ($t: MessageFormatter, album?: AlbumResponseD
   const assetIds = assetMultiSelectManager.assets.map((asset) => asset.id);
   const ownedAssets = assetMultiSelectManager.ownedAssets;
   const isAlbumOwner = album?.albumUsers[0].user.id === authManager.user.id;
+  const isAllLocked = assetMultiSelectManager.assets.every(({ visibility }) => visibility === AssetVisibility.Locked);
+  const hasLockedAssets =
+    !!album?.isLocked || assetMultiSelectManager.assets.some(({ visibility }) => visibility === AssetVisibility.Locked);
 
   const onAction = async (name: AssetJobName) => {
     await handleRunAssetJob({ name, assetIds: ownedAssets.map(({ id }) => id) });
@@ -79,7 +84,7 @@ export const getAssetBulkActions = ($t: MessageFormatter, album?: AlbumResponseD
     title: $t('add_to_album'),
     icon: mdiPlus,
     shortcuts: [{ key: 'l' }],
-    onAction: () => modalManager.show(AssetAddToAlbumModal, { assetIds }),
+    onAction: () => modalManager.show(AssetAddToAlbumModal, { assetIds, isLocked: isAllLocked }),
   };
 
   const Archive: ActionItem = {
@@ -98,7 +103,14 @@ export const getAssetBulkActions = ($t: MessageFormatter, album?: AlbumResponseD
   const CreateSharedLink: ActionItem = {
     title: $t('share'),
     icon: mdiShareVariantOutline,
-    onAction: () => modalManager.show(SharedLinkCreateModal, { assetIds }),
+    onAction: () => modalManager.show(SharedLinkCreateModal, { assetIds, requirePassword: hasLockedAssets }),
+  };
+
+  const ShowToPartners: ActionItem = {
+    title: $t('show_to_partners'),
+    icon: mdiAccountMultipleOutline,
+    $if: () => assetMultiSelectManager.isAllUserOwned && isAllLocked,
+    onAction: () => modalManager.show(AssetPartnerAccessModal, { assetIds }),
   };
 
   const RemoveFromAlbum: ActionItem = {
@@ -163,6 +175,7 @@ export const getAssetBulkActions = ($t: MessageFormatter, album?: AlbumResponseD
     Archive,
     CreateSharedLink,
     RemoveFromAlbum,
+    ShowToPartners,
     Tag,
     Unarchive,
     RefreshFacesJob,
@@ -183,11 +196,20 @@ export const getAssetActions = (
   const isAlbumOwner = !!(authUser && authUser.id === album?.albumUsers.at(0)?.user.id);
   const smartSearchEnabled = !!authUser && readPreloadedQuery(getUserConfigQuery()).machineLearning.clip.enabled;
 
+  const isLocked = asset.visibility === AssetVisibility.Locked;
+
   const Share: ActionItem = {
     title: $t('share'),
     icon: mdiShareVariantOutline,
-    $if: () => !!(authUser && !asset.isTrashed && asset.visibility !== AssetVisibility.Locked),
-    onAction: () => modalManager.show(SharedLinkCreateModal, { assetIds: [asset.id] }),
+    $if: () => !!(authUser && !asset.isTrashed && (!isLocked || isOwner)),
+    onAction: () => modalManager.show(SharedLinkCreateModal, { assetIds: [asset.id], requirePassword: isLocked }),
+  };
+
+  const ShowToPartners: ActionItem = {
+    title: $t('show_to_partners'),
+    icon: mdiAccountMultipleOutline,
+    $if: () => isOwner && isLocked && !asset.isTrashed,
+    onAction: () => modalManager.show(AssetPartnerAccessModal, { assetIds: [asset.id] }),
   };
 
   const Download: ActionItem = {
@@ -263,8 +285,8 @@ export const getAssetActions = (
     title: $t('add_to_album'),
     icon: mdiPlus,
     shortcuts: [{ key: 'l' }],
-    $if: () => asset.visibility !== AssetVisibility.Locked && !asset.isTrashed,
-    onAction: () => modalManager.show(AssetAddToAlbumModal, { assetIds: [asset.id] }),
+    $if: () => (!isLocked || isOwner) && !asset.isTrashed,
+    onAction: () => modalManager.show(AssetAddToAlbumModal, { assetIds: [asset.id], isLocked }),
   };
 
   const RemoveFromAlbum: ActionItem = {
@@ -406,6 +428,7 @@ export const getAssetActions = (
     PlaySlideshow,
     AddToAlbum,
     RemoveFromAlbum,
+    ShowToPartners,
     ZoomIn,
     ZoomOut,
     Copy,
