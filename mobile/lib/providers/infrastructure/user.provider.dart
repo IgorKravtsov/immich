@@ -1,5 +1,7 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/data/server/partner_locked_asset.dart';
 import 'package:immich_mobile/domain/services/partner.service.dart';
+import 'package:immich_mobile/domain/services/partner_locked_access.service.dart';
 import 'package:immich_mobile/domain/services/user.service.dart';
 import 'package:immich_mobile/infrastructure/repositories/user_api.repository.dart';
 import 'package:immich_mobile/providers/api.provider.dart';
@@ -21,3 +23,7 @@ final partnerServiceProvider = Provider<PartnerService>((ref) {
   final db = ref.watch(driftProvider);
   return PartnerService(db.userRepository, db.partnerRepository, ref.watch(partnerApiRepositoryProvider));
 });
+
+final partnerLockedAccessServiceProvider = Provider<PartnerLockedAccessService>(
+  (ref) => PartnerLockedAccessService(ref.watch(partnerLockedAssetApiRepositoryProvider)),
+);

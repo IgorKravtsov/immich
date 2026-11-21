@@ -59,6 +59,14 @@ class RemoteAlbumService {
     return _repository.getAll();
   }
 
+  Stream<List<RemoteAlbum>> watchLocked() {
+    return _repository.watchLocked();
+  }
+
+  Stream<Set<String>> watchLockedAlbumIds() {
+    return _repository.watchLockedAlbumIds();
+  }
+
   Future<RemoteAlbum?> get(String albumId) {
     return _repository.get(albumId);
   }
@@ -120,12 +128,14 @@ class RemoteAlbumService {
     required UserDto owner,
     required List<String> assetIds,
     String? description,
+    bool isLocked = false,
   }) async {
     final album = await _albumApiRepository.createDriftAlbum(
       title,
       owner,
       description: description,
       assetIds: assetIds,
+      isLocked: isLocked,
     );
     await _repository.create(album, assetIds);
 
@@ -139,6 +149,7 @@ class RemoteAlbumService {
     String? thumbnailAssetId,
     bool? isActivityEnabled,
     AlbumAssetOrder? order,
+    bool? isLocked,
   }) async {
     final owner = await _repository.getOwner(albumId);
     final updatedAlbum = await _albumApiRepository.updateAlbum(
@@ -149,6 +160,7 @@ class RemoteAlbumService {
       thumbnailAssetId: thumbnailAssetId,
       isActivityEnabled: isActivityEnabled,
       order: order,
+      isLocked: isLocked,
     );
 
     // Update the local database
@@ -290,10 +302,18 @@ class RemoteAlbumService {
     await _repository.deleteAlbum(albumId);
   }
 
-  Future<void> addUsers({required String albumId, required List<String> userIds}) async {
-    await _albumApiRepository.addUsers(albumId, userIds);
+  Future<void> addUsers({
+    required String albumId,
+    required List<String> userIds,
+    AlbumUserRole role = AlbumUserRole.editor,
+  }) async {
+    await _albumApiRepository.addUsers(albumId, userIds, role: role);
 
-    return _repository.addUsers(albumId, userIds);
+    return _repository.addUsers(albumId, userIds, role: role);
+  }
+
+  Future<RemoteAlbum> setLocked(String albumId, {required bool isLocked}) {
+    return updateAlbum(albumId, isLocked: isLocked);
   }
 
   Future<void> removeUser(String albumId, {required String userId}) async {

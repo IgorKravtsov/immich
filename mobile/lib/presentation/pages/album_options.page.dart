@@ -12,12 +12,15 @@ import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/theme_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/presentation/pages/user_selection.page.dart';
+import 'package:immich_mobile/presentation/widgets/locked/elevated_session.dart';
+import 'package:immich_mobile/presentation/widgets/locked/locked_album_partners.widget.dart';
 import 'package:immich_mobile/providers/auth.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/current_album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/remote_album.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
+import 'package:immich_mobile/widgets/common/confirm_dialog.dart';
 import 'package:immich_mobile/widgets/common/immich_toast.dart';
 import 'package:immich_mobile/widgets/common/user_circle_avatar.dart';
 
@@ -98,6 +101,48 @@ class AlbumOptionsPage extends HookConsumerWidget {
         }
 
         ImmichToast.show(context: context, msg: "Failed to add users to album: $e", toastType: ToastType.error);
+      }
+    }
+
+    Future<void> toggleLocked() async {
+      final shouldLock = !album.isLocked;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => ConfirmDialog(
+          title: shouldLock ? context.t.move_to_locked_folder : context.t.remove_from_locked_folder,
+          content: shouldLock ? context.t.locked_album_lock_confirmation : context.t.locked_album_unlock_confirmation,
+          ok: context.t.confirm,
+        ),
+      );
+      if (confirmed != true || !context.mounted) {
+        return;
+      }
+
+      if (!await ensureElevatedSession(context, ref) || !context.mounted) {
+        return;
+      }
+
+      try {
+        await ref.read(remoteAlbumProvider.notifier).setLocked(album.id, isLocked: shouldLock);
+        if (!context.mounted) {
+          return;
+        }
+
+        ImmichToast.show(
+          context: context,
+          msg: shouldLock ? context.t.locked_album_moved : context.t.locked_album_removed,
+          toastType: ToastType.success,
+        );
+        if (!shouldLock) {
+          unawaited(ref.read(authProvider.notifier).lockPinCode());
+        }
+        unawaited(context.navigateTo(const AlbumsRoute()));
+      } catch (_) {
+        if (!context.mounted) {
+          return;
+        }
+
+        ImmichToast.show(context: context, msg: context.t.locked_album_update_failed, toastType: ToastType.error);
       }
     }
 
@@ -234,6 +279,16 @@ class AlbumOptionsPage extends HookConsumerWidget {
                   style: context.textTheme.labelLarge?.copyWith(color: context.colorScheme.onSurfaceSecondary),
                 ),
               ),
+            if (isOwner)
+              ListTile(
+                leading: Icon(album.isLocked ? Icons.lock_open_rounded : Icons.lock_rounded),
+                title: Text(
+                  album.isLocked ? context.t.remove_from_locked_folder : context.t.move_to_locked_folder,
+                  style: context.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w500),
+                ),
+                onTap: toggleLocked,
+              ),
+            if (isOwner && album.isLocked) LockedAlbumPartnersSection(album: album),
             buildSectionTitle(context.t.shared_album_section_people_title),
             if (isOwner) ...[
               ListTile(

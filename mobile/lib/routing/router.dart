@@ -52,6 +52,7 @@ import 'package:immich_mobile/presentation/pages/feature_message/whats_new.page.
 import 'package:immich_mobile/presentation/pages/library.page.dart';
 import 'package:immich_mobile/presentation/pages/local_album.page.dart';
 import 'package:immich_mobile/presentation/pages/local_timeline.page.dart';
+import 'package:immich_mobile/presentation/pages/locked_album.page.dart';
 import 'package:immich_mobile/presentation/pages/locked_folder.page.dart';
 import 'package:immich_mobile/presentation/pages/map.page.dart';
 import 'package:immich_mobile/presentation/pages/memory.page.dart';
@@ -166,6 +167,7 @@ class AppRouter extends RootStackRouter {
     AutoRoute(page: TrashRoute.page, guards: [_authGuard, _duplicateGuard]),
     AutoRoute(page: ArchiveRoute.page, guards: [_authGuard, _duplicateGuard]),
     AutoRoute(page: LockedFolderRoute.page, guards: [_authGuard, _lockedGuard, _duplicateGuard]),
+    AutoRoute(page: LockedAlbumRoute.page, guards: [_authGuard, _lockedGuard]),
     AutoRoute(page: VideoRoute.page, guards: [_authGuard, _duplicateGuard]),
     AutoRoute(page: LibraryRoute.page, guards: [_authGuard, _duplicateGuard]),
     AutoRoute(page: AssetSelectionTimelineRoute.page, guards: [_authGuard, _duplicateGuard]),

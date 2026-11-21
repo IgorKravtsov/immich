@@ -25,8 +25,15 @@ class SharedLinkEditPage extends HookConsumerWidget {
   final SharedLink? existingLink;
   final List<String>? assetsList;
   final String? albumId;
+  final bool requiresPassword;
 
-  const SharedLinkEditPage({super.key, this.existingLink, this.assetsList, this.albumId});
+  const SharedLinkEditPage({
+    super.key,
+    this.existingLink,
+    this.assetsList,
+    this.albumId,
+    this.requiresPassword = false,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -122,6 +129,8 @@ class SharedLinkEditPage extends HookConsumerWidget {
           border: const OutlineInputBorder(),
           hintText: context.t.shared_link_edit_password_hint,
           hintStyle: const TextStyle(fontWeight: FontWeight.normal, fontSize: 14),
+          helperText: requiresPassword ? context.t.shared_link_password_required : null,
+          helperMaxLines: 2,
         ),
       );
     }
@@ -324,6 +333,16 @@ class SharedLinkEditPage extends HookConsumerWidget {
     DateTime? calculateExpiry() => expiryAfter.value;
 
     Future<void> handleNewLink() async {
+      if (requiresPassword && passwordController.text.isEmpty) {
+        ImmichToast.show(
+          context: context,
+          gravity: ToastGravity.BOTTOM,
+          toastType: ToastType.error,
+          msg: context.t.shared_link_password_required,
+        );
+        return;
+      }
+
       final newLink = await ref
           .read(sharedLinkServiceProvider)
           .createSharedLink(

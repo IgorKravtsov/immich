@@ -2,6 +2,7 @@
 
 import 'dart:async';
 
+import 'package:collection/collection.dart';
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
@@ -76,6 +77,7 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
     required String title,
     String? description,
     List<String> assetIds = const [],
+    bool isLocked = false,
   }) async {
     try {
       final currentUser = ref.read(currentUserProvider);
@@ -88,9 +90,12 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
         owner: currentUser,
         description: description,
         assetIds: assetIds,
+        isLocked: isLocked,
       );
 
-      state = state.copyWith(albums: [...state.albums, album]);
+      if (!album.isLocked) {
+        state = state.copyWith(albums: [...state.albums, album]);
+      }
 
       return album;
     } catch (error, stack) {
@@ -170,8 +175,24 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
     }
   }
 
+  Future<RemoteAlbum> setLocked(String albumId, {required bool isLocked}) async {
+    try {
+      final updatedAlbum = await _remoteAlbumService.setLocked(albumId, isLocked: isLocked);
+      final others = state.albums.where((album) => album.id != albumId);
+      state = state.copyWith(albums: updatedAlbum.isLocked ? others.toList() : [...others, updatedAlbum]);
+      return updatedAlbum;
+    } catch (error, stack) {
+      _logger.severe('Failed to change locked state of album', error, stack);
+      rethrow;
+    }
+  }
+
   Future<RemoteAlbum?> toggleAlbumOrder(String albumId) async {
-    final currentAlbum = state.albums.firstWhere((album) => album.id == albumId);
+    final currentAlbum =
+        state.albums.firstWhereOrNull((album) => album.id == albumId) ?? await _remoteAlbumService.get(albumId);
+    if (currentAlbum == null) {
+      return null;
+    }
 
     final newOrder = currentAlbum.order == AlbumAssetOrder.asc ? AlbumAssetOrder.desc : AlbumAssetOrder.asc;
 
@@ -282,8 +303,8 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
     state = state.copyWith(albums: state.albums.map((album) => album.id == albumId ? updated : album).toList());
   }
 
-  Future<void> addUsers(String albumId, List<String> userIds) {
-    return _remoteAlbumService.addUsers(albumId: albumId, userIds: userIds);
+  Future<void> addUsers(String albumId, List<String> userIds, {AlbumUserRole role = AlbumUserRole.editor}) {
+    return _remoteAlbumService.addUsers(albumId: albumId, userIds: userIds, role: role);
   }
 
   Future<void> removeUser(String albumId, String userId) {
@@ -301,6 +322,14 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
     return _remoteAlbumService.setActivityStatus(albumId, enabled);
   }
 }
+
+final lockedAlbumsProvider = StreamProvider.autoDispose<List<RemoteAlbum>>(
+  (ref) => ref.watch(remoteAlbumServiceProvider).watchLocked(),
+);
+
+final lockedAlbumIdsProvider = StreamProvider<Set<String>>(
+  (ref) => ref.watch(remoteAlbumServiceProvider).watchLockedAlbumIds(),
+);
 
 final remoteAlbumDateRangeProvider = StreamProvider.autoDispose.family<(DateTime, DateTime), String>((ref, albumId) {
   final service = ref.watch(remoteAlbumServiceProvider);
