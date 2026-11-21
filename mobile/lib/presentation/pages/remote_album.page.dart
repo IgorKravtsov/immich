@@ -221,7 +221,9 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
                 onAddPhotos: isOwner || isEditor ? () => addAssets(context) : null,
                 onToggleAlbumOrder: () => toggleAlbumOrder(),
                 onEditAlbum: canEdit ? () => showEditTitleAndDescription(context) : null,
-                onCreateSharedLink: () => unawaited(context.pushRoute(SharedLinkEditRoute(albumId: _album.id))),
+                onCreateSharedLink: () => unawaited(
+                  context.pushRoute(SharedLinkEditRoute(albumId: _album.id, requiresPassword: _album.isLocked)),
+                ),
                 onShowOptions: () => context.pushRoute(AlbumOptionsRoute(album: _album)),
               ),
               onEditTitle: canEdit ? () => showEditTitleAndDescription(context) : null,

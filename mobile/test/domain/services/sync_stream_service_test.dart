@@ -111,14 +111,16 @@ void main() {
     when(() => mockSyncApiRepo.deleteSyncAck(any())).thenAnswer((_) async => {});
 
     when(() => mockApi.serverInfoApi).thenReturn(mockServerApi);
-    when(
-      () => mockServerApi.getServerVersion(),
-    ).thenAnswer((_) async => ServerVersionResponseDto(major: 1, minor: 132, patch_: 0, prerelease: null, featureLevel: 1));
+    when(() => mockServerApi.getServerVersion()).thenAnswer(
+      (_) async => ServerVersionResponseDto(major: 1, minor: 132, patch_: 0, prerelease: null, featureLevel: 1),
+    );
 
     when(() => mockSyncStreamRepo.updateUsersV1(any())).thenAnswer(successHandler);
     when(() => mockSyncStreamRepo.deleteUsersV1(any())).thenAnswer(successHandler);
     when(() => mockSyncStreamRepo.updatePartnerV1(any())).thenAnswer(successHandler);
     when(() => mockSyncStreamRepo.deletePartnerV1(any())).thenAnswer(successHandler);
+    when(() => mockSyncStreamRepo.updatePartnerLockedAssetsV1(any())).thenAnswer(successHandler);
+    when(() => mockSyncStreamRepo.deletePartnerLockedAssetsV1(any())).thenAnswer(successHandler);
     when(() => mockSyncStreamRepo.updateAssetsV1(any())).thenAnswer(successHandler);
     when(
       () => mockSyncStreamRepo.updateAssetsV1(any(), debugLabel: any(named: 'debugLabel')),
@@ -307,6 +309,30 @@ void main() {
       verifyNever(() => mockSyncStreamRepo.updateUsersV1(any()));
 
       verify(() => mockSyncApiRepo.ack(["2"])).called(1);
+    });
+
+    test("processes partner locked asset events", () async {
+      final events = [
+        SyncEvent(
+          type: SyncEntityType.partnerLockedAssetV1,
+          data: SyncPartnerLockedAssetV1(sharedById: 'partner-1', sharedWithId: 'user-1', assetId: 'asset-1'),
+          ack: 'locked-1',
+        ),
+        SyncEvent(
+          type: SyncEntityType.partnerLockedAssetDeleteV1,
+          data: SyncPartnerLockedAssetDeleteV1(sharedById: 'partner-1', sharedWithId: 'user-1', assetId: 'asset-2'),
+          ack: 'locked-2',
+        ),
+      ];
+
+      await simulateEvents(events);
+
+      verifyInOrder([
+        () => mockSyncStreamRepo.updatePartnerLockedAssetsV1(any()),
+        () => mockSyncApiRepo.ack(['locked-1']),
+        () => mockSyncStreamRepo.deletePartnerLockedAssetsV1(any()),
+        () => mockSyncApiRepo.ack(['locked-2']),
+      ]);
     });
 
     test("processes memory sync events successfully", () async {
@@ -565,9 +591,9 @@ void main() {
   group('SyncStreamService - Sync Migration', () {
     test('ensure that <2.5.0 migrations run', () async {
       await Store.put(StoreKey.syncMigrationStatus, "[]");
-      when(
-        () => mockServerApi.getServerVersion(),
-      ).thenAnswer((_) async => ServerVersionResponseDto(major: 2, minor: 4, patch_: 1, prerelease: null, featureLevel: 1));
+      when(() => mockServerApi.getServerVersion()).thenAnswer(
+        (_) async => ServerVersionResponseDto(major: 2, minor: 4, patch_: 1, prerelease: null, featureLevel: 1),
+      );
 
       await sut.sync();
 
@@ -593,9 +619,9 @@ void main() {
     });
     test('ensure that >=2.5.0 migrations run', () async {
       await Store.put(StoreKey.syncMigrationStatus, "[]");
-      when(
-        () => mockServerApi.getServerVersion(),
-      ).thenAnswer((_) async => ServerVersionResponseDto(major: 2, minor: 5, patch_: 0, prerelease: null, featureLevel: 1));
+      when(() => mockServerApi.getServerVersion()).thenAnswer(
+        (_) async => ServerVersionResponseDto(major: 2, minor: 5, patch_: 0, prerelease: null, featureLevel: 1),
+      );
       await sut.sync();
 
       verifyInOrder([
@@ -623,13 +649,36 @@ void main() {
         '["${SyncMigrationTask.v20260128_CopyExifWidthHeightToAsset.name}"]',
       );
 
-      when(
-        () => mockServerApi.getServerVersion(),
-      ).thenAnswer((_) async => ServerVersionResponseDto(major: 2, minor: 4, patch_: 1, prerelease: null, featureLevel: 1));
+      when(() => mockServerApi.getServerVersion()).thenAnswer(
+        (_) async => ServerVersionResponseDto(major: 2, minor: 4, patch_: 1, prerelease: null, featureLevel: 1),
+      );
 
       await sut.sync();
 
       verifyNever(() => mockSyncMigrationRepo.v20260128CopyExifWidthHeightToAsset());
+    });
+
+    test('resets the albums v2 checkpoint once on a server with locked albums', () async {
+      await Store.put(StoreKey.syncMigrationStatus, "[]");
+      when(() => mockServerApi.getServerVersion()).thenAnswer(
+        (_) async => ServerVersionResponseDto(major: 3, minor: 4, patch_: 0, prerelease: null, featureLevel: 1),
+      );
+
+      await sut.sync();
+      await sut.sync();
+
+      verify(() => mockSyncApiRepo.deleteSyncAck([SyncEntityType.albumV2])).called(1);
+    });
+
+    test('does not reset the albums v2 checkpoint on a server without locked albums', () async {
+      await Store.put(StoreKey.syncMigrationStatus, "[]");
+      when(() => mockServerApi.getServerVersion()).thenAnswer(
+        (_) async => ServerVersionResponseDto(major: 3, minor: 3, patch_: 0, prerelease: null, featureLevel: 1),
+      );
+
+      await sut.sync();
+
+      verifyNever(() => mockSyncApiRepo.deleteSyncAck([SyncEntityType.albumV2]));
     });
   });
 }

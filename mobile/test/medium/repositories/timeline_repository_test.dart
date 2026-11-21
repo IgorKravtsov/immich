@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
+import 'package:immich_mobile/domain/models/timeline.model.dart';
 import 'package:immich_mobile/infrastructure/repositories/timeline.repository.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
@@ -99,6 +100,75 @@ void main() {
         normalEarlier.id,
         normalLater.id,
       ]);
+    });
+  });
+
+  group('locked folder assets', () {
+    test('includes own locked assets and partner locked assets granted to the user', () async {
+      final user = await ctx.newUser();
+      final partner = await ctx.newUser();
+      await ctx.newPartner(sharedById: partner.id, sharedWithId: user.id);
+      final own = await ctx.newRemoteAsset(ownerId: user.id, visibility: .locked);
+      final granted = await ctx.newRemoteAsset(ownerId: partner.id, visibility: .locked);
+      await ctx.newRemoteAsset(ownerId: partner.id, visibility: .locked);
+      await ctx.newRemoteAsset(ownerId: user.id, visibility: .timeline);
+      await ctx.newPartnerLockedAsset(sharedById: partner.id, sharedWithId: user.id, assetId: granted.id);
+
+      final query = sut.locked(user.id, .day);
+      final assets = await query.assetSource(0, 10);
+
+      expect(assets.map((asset) => (asset as RemoteAsset).id), unorderedEquals([own.id, granted.id]));
+      expect((await query.bucketSource().first).fold(0, (sum, bucket) => sum + bucket.assetCount), 2);
+    });
+
+    test('ignores grants once the partnership is gone', () async {
+      final user = await ctx.newUser();
+      final partner = await ctx.newUser();
+      final asset = await ctx.newRemoteAsset(ownerId: partner.id, visibility: .locked);
+      await ctx.newPartnerLockedAsset(sharedById: partner.id, sharedWithId: user.id, assetId: asset.id);
+
+      expect(await sut.locked(user.id, .day).assetSource(0, 10), isEmpty);
+    });
+
+    test('ignores grants for assets that are no longer locked', () async {
+      final user = await ctx.newUser();
+      final partner = await ctx.newUser();
+      await ctx.newPartner(sharedById: partner.id, sharedWithId: user.id);
+      final asset = await ctx.newRemoteAsset(ownerId: partner.id, visibility: .timeline);
+      await ctx.newPartnerLockedAsset(sharedById: partner.id, sharedWithId: user.id, assetId: asset.id);
+
+      expect(await sut.locked(user.id, .day).assetSource(0, 10), isEmpty);
+    });
+  });
+
+  group('locked assets in albums', () {
+    test('a regular album hides locked assets of other users', () async {
+      final user = await ctx.newUser();
+      final other = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id);
+      final visible = await ctx.newRemoteAsset(ownerId: user.id);
+      final locked = await ctx.newRemoteAsset(ownerId: other.id, visibility: .locked);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: visible.id);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: locked.id);
+
+      for (final groupBy in [GroupAssetsBy.day, GroupAssetsBy.none]) {
+        final query = sut.remoteAlbum(album.id, groupBy);
+        final assets = await query.assetSource(0, 10);
+        expect(assets.map((asset) => (asset as RemoteAsset).id), [visible.id]);
+        expect((await query.bucketSource().first).single.assetCount, 1);
+      }
+    });
+
+    test('a locked album shows its locked assets', () async {
+      final user = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+      final locked = await ctx.newRemoteAsset(ownerId: user.id, visibility: .locked);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: locked.id);
+
+      final query = sut.remoteAlbum(album.id, .day);
+
+      expect((await query.assetSource(0, 10)).map((asset) => (asset as RemoteAsset).id), [locked.id]);
+      expect((await query.bucketSource().first).single.assetCount, 1);
     });
   });
 

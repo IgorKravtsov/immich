@@ -92,4 +92,30 @@ void main() {
       },
     );
   });
+
+  group('v37 locked albums', () {
+    test(
+      'existing albums are not locked and partner grants can be stored',
+      () async {
+        final schema = await verifier.schemaAt(36);
+        schema.rawDatabase.execute('''
+        INSERT INTO user_entity (id, name, email, profile_changed_at) VALUES ('user-1', 'User', 'user@test.com', '2026-01-01T00:00:00.000Z'), ('partner-1', 'Partner', 'partner@test.com', '2026-01-01T00:00:00.000Z');
+        INSERT INTO remote_album_entity (id, name, "order") VALUES ('album-1', 'Album', 1);
+      ''');
+
+        final db = Drift(schema.newConnection());
+        await verifier.migrateAndValidate(db, 37);
+
+        final album = await db.remoteAlbumEntity.select().getSingle();
+        expect(album.isLocked, isFalse);
+
+        await db.customStatement(
+          "INSERT INTO partner_locked_asset_entity (shared_by_id, shared_with_id, asset_id) VALUES ('partner-1', 'user-1', 'asset-1')",
+        );
+        final grants = await db.partnerLockedAssetEntity.select().get();
+        expect(grants.single.assetId, 'asset-1');
+        await db.close();
+      },
+    );
+  });
 }

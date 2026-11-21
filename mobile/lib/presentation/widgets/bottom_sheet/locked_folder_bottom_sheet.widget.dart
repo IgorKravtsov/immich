@@ -4,6 +4,7 @@ import 'package:immich_mobile/presentation/actions/asset_debug.action.dart';
 import 'package:immich_mobile/presentation/actions/delete.action.dart';
 import 'package:immich_mobile/presentation/actions/download.action.dart';
 import 'package:immich_mobile/presentation/actions/lock.action.dart';
+import 'package:immich_mobile/presentation/actions/partner_locked_access.action.dart';
 import 'package:immich_mobile/presentation/actions/share.action.dart';
 import 'package:immich_mobile/presentation/widgets/bottom_sheet/base_bottom_sheet.widget.dart';
 
@@ -22,6 +23,7 @@ class LockedFolderBottomSheet extends StatelessWidget {
         .new(action: DownloadAction(source: .timeline)),
         .new(action: DeleteAction(source: .timeline)),
         .new(action: LockAction(source: .timeline)),
+        .new(action: PartnerLockedAccessAction(source: .timeline)),
       ],
     );
   }

@@ -118,6 +118,31 @@ class BackupRepository extends DatabaseAccessor<Drift> with $BackupRepositoryMix
     return query.map((localAsset) => localAsset.toDto()).get();
   }
 
+  Future<bool> isInLockedAlbum(String localAssetId) async {
+    final query = _db.localAlbumAssetEntity.selectOnly()
+      ..addColumns([_db.localAlbumAssetEntity.assetId])
+      ..join([
+        innerJoin(
+          _db.localAlbumEntity,
+          _db.localAlbumEntity.id.equalsExp(_db.localAlbumAssetEntity.albumId),
+          useColumns: false,
+        ),
+        innerJoin(
+          _db.remoteAlbumEntity,
+          _db.remoteAlbumEntity.id.equalsExp(_db.localAlbumEntity.linkedRemoteAlbumId),
+          useColumns: false,
+        ),
+      ])
+      ..where(
+        _db.localAlbumAssetEntity.assetId.equals(localAssetId) &
+            _db.localAlbumEntity.backupSelection.equalsValue(BackupSelection.selected) &
+            _db.remoteAlbumEntity.isLocked.equals(true),
+      )
+      ..limit(1);
+
+    return (await query.getSingleOrNull()) != null;
+  }
+
   Future<bool> markIfUnsupported(String assetId, String extension) async {
     // TODO: Move to a base backup service once the upload services are refactored
     final supported = SettingsRepository.instance.appConfig.supportedFileExtensions;

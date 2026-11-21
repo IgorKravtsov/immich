@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:immich_mobile/constants/enums.dart';
+import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/infrastructure/repositories/remote_album.repository.dart';
 
 import '../repository_context.dart';
@@ -41,6 +42,71 @@ void main() {
       final updated = await sut.get(album.id);
       expect(updated?.thumbnailAssetId, thumbnail.id);
       expect(updated?.assetCount, 1);
+    });
+  });
+
+  group('locked albums', () {
+    test('getAll leaves out locked albums by default', () async {
+      final user = await ctx.newUser();
+      final regular = await ctx.newRemoteAlbum(ownerId: user.id);
+      await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+
+      final albums = await sut.getAll();
+
+      expect(albums.map((album) => album.id), [regular.id]);
+      expect(albums.single.isLocked, isFalse);
+    });
+
+    test('getAll returns only locked albums when asked for them', () async {
+      final user = await ctx.newUser();
+      await ctx.newRemoteAlbum(ownerId: user.id);
+      final locked = await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+
+      final albums = await sut.getAll(isLocked: true);
+
+      expect(albums.map((album) => album.id), [locked.id]);
+      expect(albums.single.isLocked, isTrue);
+    });
+
+    test('watchLocked emits own and shared locked albums', () async {
+      final user = await ctx.newUser();
+      final partner = await ctx.newUser();
+      final own = await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+      final shared = await ctx.newRemoteAlbum(ownerId: partner.id, isLocked: true);
+      await ctx.newRemoteAlbum(ownerId: partner.id);
+
+      final albums = await sut.watchLocked().first;
+
+      expect(albums.map((album) => album.id), unorderedEquals([own.id, shared.id]));
+    });
+
+    test('watchLockedAlbumIds reflects the locked flag', () async {
+      final user = await ctx.newUser();
+      final locked = await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+      await ctx.newRemoteAlbum(ownerId: user.id);
+
+      expect(await sut.watchLockedAlbumIds().first, {locked.id});
+    });
+
+    test('updateAlbum persists the locked flag', () async {
+      final user = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id);
+      final existing = (await sut.get(album.id))!;
+
+      await sut.updateAlbum(existing.copyWith(isLocked: true));
+
+      expect((await sut.get(album.id))?.isLocked, isTrue);
+      expect(await sut.getAll(), isEmpty);
+    });
+
+    test('addUsers stores the requested role', () async {
+      final user = await ctx.newUser();
+      final partner = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+
+      await sut.addUsers(album.id, [partner.id], role: .viewer);
+
+      expect(await sut.getUserRole(album.id, partner.id), AlbumUserRole.viewer);
     });
   });
 

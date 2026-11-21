@@ -290,4 +290,53 @@ void main() {
 
     expect(onDataCallCount, 0);
   });
+
+  group('partner locked assets', () {
+    Future<List<String>> requestedTypes(SemVer serverVersion) async {
+      final future = streamChanges((_, _, _) async {}, serverVersion);
+      await responseStreamController.close();
+      await future;
+      final request = verify(() => mockHttpClient.send(captureAny())).captured.single as http.Request;
+      return (jsonDecode(request.body)['types'] as List).cast<String>();
+    }
+
+    test('requests partner locked assets from a server with locked albums', () async {
+      final types = await requestedTypes(const SemVer(major: 3, minor: 4, patch: 0));
+
+      expect(types, contains(SyncRequestType.partnerLockedAssetsV1.toJson()));
+    });
+
+    test('does not request partner locked assets from an older server', () async {
+      final types = await requestedTypes(const SemVer(major: 3, minor: 3, patch: 0));
+
+      expect(types, isNot(contains(SyncRequestType.partnerLockedAssetsV1.toJson())));
+    });
+
+    test('parses partner locked asset events', () async {
+      final received = <SyncEvent>[];
+      final future = streamChanges(
+        (events, _, _) async => received.addAll(events),
+        const SemVer(major: 3, minor: 4, patch: 0),
+      );
+      await Future.delayed(const Duration(milliseconds: 10));
+
+      final grant = SyncPartnerLockedAssetV1(sharedById: 'p', sharedWithId: 'u', assetId: 'a');
+      final revoke = SyncPartnerLockedAssetDeleteV1(sharedById: 'p', sharedWithId: 'u', assetId: 'b');
+      responseStreamController.add(
+        utf8.encode(_createJsonLine(SyncEntityType.partnerLockedAssetV1.toString(), grant.toJson(), 'ack1')),
+      );
+      responseStreamController.add(
+        utf8.encode(_createJsonLine(SyncEntityType.partnerLockedAssetDeleteV1.toString(), revoke.toJson(), 'ack2')),
+      );
+      await responseStreamController.close();
+      await future;
+
+      expect(received.map((event) => event.type), [
+        SyncEntityType.partnerLockedAssetV1,
+        SyncEntityType.partnerLockedAssetDeleteV1,
+      ]);
+      expect((received.first.data as SyncPartnerLockedAssetV1).assetId, 'a');
+      expect((received.last.data as SyncPartnerLockedAssetDeleteV1).assetId, 'b');
+    });
+  });
 }

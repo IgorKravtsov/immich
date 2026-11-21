@@ -472,4 +472,77 @@ void main() {
       expect(keepRows, hasLength(1));
     });
   });
+
+  group('SyncStreamRepository - locked albums', () {
+    SyncAlbumV2 album({required bool isLocked}) => SyncAlbumV2(
+      id: 'album-1',
+      name: 'Album',
+      description: '',
+      createdAt: DateTime(2024, 1, 1),
+      updatedAt: DateTime(2024, 1, 2),
+      thumbnailAssetId: null,
+      isActivityEnabled: true,
+      order: AssetOrder.desc,
+      isLocked: isLocked,
+    );
+
+    test('stores and updates the locked flag of an album', () async {
+      await sut.updateAlbumsV2([album(isLocked: true)]);
+      expect((await db.remoteAlbumEntity.select().getSingle()).isLocked, isTrue);
+
+      await sut.updateAlbumsV2([album(isLocked: false)]);
+      expect((await db.remoteAlbumEntity.select().getSingle()).isLocked, isFalse);
+    });
+  });
+
+  group('SyncStreamRepository - partner locked assets', () {
+    setUp(() async {
+      await sut.updateUsersV1([_createUser(id: 'partner-1'), _createUser(id: 'user-1')]);
+    });
+
+    test('upserts grants without duplicating them', () async {
+      final grant = SyncPartnerLockedAssetV1(sharedById: 'partner-1', sharedWithId: 'user-1', assetId: 'asset-1');
+
+      await sut.updatePartnerLockedAssetsV1([grant]);
+      await sut.updatePartnerLockedAssetsV1([grant]);
+
+      final rows = await db.partnerLockedAssetEntity.select().get();
+      expect(rows, hasLength(1));
+      expect(rows.single.assetId, 'asset-1');
+    });
+
+    test('deletes only the matching grant', () async {
+      await sut.updatePartnerLockedAssetsV1([
+        SyncPartnerLockedAssetV1(sharedById: 'partner-1', sharedWithId: 'user-1', assetId: 'asset-1'),
+        SyncPartnerLockedAssetV1(sharedById: 'partner-1', sharedWithId: 'user-1', assetId: 'asset-2'),
+      ]);
+
+      await sut.deletePartnerLockedAssetsV1([
+        SyncPartnerLockedAssetDeleteV1(sharedById: 'partner-1', sharedWithId: 'user-1', assetId: 'asset-1'),
+      ]);
+
+      final rows = await db.partnerLockedAssetEntity.select().get();
+      expect(rows.map((row) => row.assetId), ['asset-2']);
+    });
+
+    test('removes grants of a deleted user', () async {
+      await sut.updatePartnerLockedAssetsV1([
+        SyncPartnerLockedAssetV1(sharedById: 'partner-1', sharedWithId: 'user-1', assetId: 'asset-1'),
+      ]);
+
+      await sut.deleteUsersV1([SyncUserDeleteV1(userId: 'partner-1')]);
+
+      expect(await db.partnerLockedAssetEntity.select().get(), isEmpty);
+    });
+
+    test('reset clears grants', () async {
+      await sut.updatePartnerLockedAssetsV1([
+        SyncPartnerLockedAssetV1(sharedById: 'partner-1', sharedWithId: 'user-1', assetId: 'asset-1'),
+      ]);
+
+      await sut.reset();
+
+      expect(await db.partnerLockedAssetEntity.select().get(), isEmpty);
+    });
+  });
 }

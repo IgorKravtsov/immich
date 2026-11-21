@@ -8,12 +8,13 @@ import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/theme_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
+import 'package:immich_mobile/presentation/pages/locked_album.page.dart';
 import 'package:immich_mobile/presentation/widgets/album/album_tile.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/sheet_tile.widget.dart';
 import 'package:immich_mobile/providers/asset_viewer/asset_viewer.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
+import 'package:immich_mobile/providers/routes.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
-import 'package:immich_mobile/routing/router.dart';
 
 class AppearsInDetails extends ConsumerWidget {
   final BaseAsset asset;
@@ -37,9 +38,11 @@ class AppearsInDetails extends ConsumerWidget {
 
     final userId = ref.watch(currentUserProvider)?.id;
     final assetAlbums = ref.watch(albumsContainingAssetProvider(remoteAssetId));
+    final inLockedView = ref.watch(inLockedViewProvider);
 
     return assetAlbums.when(
-      data: (albums) {
+      data: (allAlbums) {
+        final albums = allAlbums.where((album) => inLockedView || !album.isLocked).toList();
         if (albums.isEmpty) {
           return const SizedBox.shrink();
         }
@@ -66,7 +69,7 @@ class AppearsInDetails extends ConsumerWidget {
                       isOwner: isOwner,
                       onAlbumSelected: (album) async {
                         ref.invalidate(assetViewerProvider);
-                        unawaited(context.router.popAndPush(RemoteAlbumRoute(album: album)));
+                        unawaited(context.router.popAndPush(albumRoute(album)));
                       },
                     );
                   }).toList(),

@@ -7,6 +7,7 @@ import 'package:immich_mobile/domain/services/asset.service.dart' as beta_asset_
 import 'package:immich_mobile/domain/services/memory.service.dart';
 import 'package:immich_mobile/domain/services/remote_album.service.dart';
 import 'package:immich_mobile/domain/services/timeline.service.dart';
+import 'package:immich_mobile/presentation/pages/locked_album.page.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/asset_viewer.page.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/asset.provider.dart' as beta_asset_provider;
@@ -129,7 +130,7 @@ class DeepLinkService {
       return null;
     }
 
-    return RemoteAlbumRoute(album: album);
+    return albumRoute(album);
   }
 
   Future<PageRouteInfo?> _buildActivityDeepLink(String albumId) async {
@@ -137,6 +138,10 @@ class DeepLinkService {
 
     if (album == null || album.isActivityEnabled == false) {
       return null;
+    }
+
+    if (album.isLocked) {
+      return LockedAlbumRoute(album: album);
     }
 
     return ActivitiesRoute(album: album);

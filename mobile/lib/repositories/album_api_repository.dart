@@ -4,6 +4,8 @@ import 'package:immich_mobile/domain/models/user.model.dart';
 import 'package:immich_mobile/providers/api.provider.dart';
 import 'package:immich_mobile/repositories/api.repository.dart';
 // ignore: import_rule_openapi
+import 'package:openapi/api.dart' as api show AlbumUserRole;
+// ignore: import_rule_openapi
 import 'package:openapi/api.dart' hide AlbumUserRole;
 
 final albumApiRepositoryProvider = Provider((ref) => AlbumApiRepository(ref.watch(apiServiceProvider).albumsApi));
@@ -18,6 +20,7 @@ class AlbumApiRepository extends ApiRepository {
     UserDto owner, {
     required Iterable<String> assetIds,
     String? description,
+    bool isLocked = false,
   }) async {
     final responseDto = await checkNull(
       _api.createAlbum(
@@ -27,6 +30,7 @@ class AlbumApiRepository extends ApiRepository {
               ? const Optional.absent()
               : Optional.present(description.isEmpty ? null : description),
           assetIds: Optional.present(assetIds.toList()),
+          isLocked: isLocked ? const Optional.present(true) : const Optional.absent(),
         ),
       ),
     );
@@ -77,6 +81,7 @@ class AlbumApiRepository extends ApiRepository {
     String? thumbnailAssetId,
     bool? isActivityEnabled,
     AlbumAssetOrder? order,
+    bool? isLocked,
   }) async {
     AssetOrder? apiOrder;
     if (order != null) {
@@ -96,6 +101,7 @@ class AlbumApiRepository extends ApiRepository {
               : Optional.present(thumbnailAssetId),
           isActivityEnabled: isActivityEnabled == null ? const Optional.absent() : Optional.present(isActivityEnabled),
           order: apiOrder == null ? const Optional.absent() : Optional.present(apiOrder),
+          isLocked: isLocked == null ? const Optional.absent() : Optional.present(isLocked),
         ),
       ),
     );
@@ -107,8 +113,14 @@ class AlbumApiRepository extends ApiRepository {
     return _api.deleteAlbum(albumId);
   }
 
-  Future<void> addUsers(String albumId, Iterable<String> userIds) async {
-    final albumUsers = userIds.map((userId) => AlbumUserAddDto(userId: userId)).toList();
+  Future<void> addUsers(String albumId, Iterable<String> userIds, {AlbumUserRole role = AlbumUserRole.editor}) async {
+    final apiRole = switch (role) {
+      AlbumUserRole.viewer => api.AlbumUserRole.viewer,
+      AlbumUserRole.editor || AlbumUserRole.owner => api.AlbumUserRole.editor,
+    };
+    final albumUsers = userIds
+        .map((userId) => AlbumUserAddDto(userId: userId, role: Optional.present(apiRole)))
+        .toList();
     await checkNull(_api.addUsersToAlbum(albumId, AddUsersDto(albumUsers: albumUsers)));
   }
 
@@ -139,6 +151,7 @@ extension on AlbumResponseDto {
       order: order.orElse(null) == AssetOrder.asc ? AlbumAssetOrder.asc : AlbumAssetOrder.desc,
       assetCount: assetCount,
       isShared: albumUsers.length > 2,
+      isLocked: isLocked,
     );
   }
 }

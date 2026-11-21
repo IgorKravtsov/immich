@@ -7,8 +7,10 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/album/local_album.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/theme_extensions.dart';
+import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/providers/backup/backup_album.provider.dart';
 import 'package:immich_mobile/providers/haptic_feedback.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/remote_album.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/widgets/common/immich_toast.dart';
 
@@ -21,6 +23,10 @@ class AlbumInfoListTile extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final bool isSelected = album.backupSelection == BackupSelection.selected;
     final bool isExcluded = album.backupSelection == BackupSelection.excluded;
+    final linkedRemoteAlbumId = album.linkedRemoteAlbumId;
+    final isLinkedToLockedAlbum =
+        linkedRemoteAlbumId != null &&
+        ref.watch(lockedAlbumIdsProvider.select((ids) => ids.valueOrNull?.contains(linkedRemoteAlbumId) ?? false));
 
     Color? buildTileColor() {
       if (isSelected) {
@@ -83,7 +89,19 @@ class AlbumInfoListTile extends HookConsumerWidget {
           }
         },
         leading: buildIcon(),
-        title: Text(album.name, style: context.textTheme.titleSmall),
+        title: Row(
+          children: [
+            Flexible(child: Text(album.name, style: context.textTheme.titleSmall)),
+            if (isLinkedToLockedAlbum)
+              Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: Tooltip(
+                  message: context.t.locked_backup_album_hint,
+                  child: Icon(Icons.lock_rounded, size: 16, color: context.colorScheme.onSurfaceSecondary),
+                ),
+              ),
+          ],
+        ),
         subtitle: buildSubtitle(),
         trailing: IconButton(
           onPressed: () {

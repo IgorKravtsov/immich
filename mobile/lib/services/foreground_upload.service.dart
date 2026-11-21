@@ -8,6 +8,7 @@ import 'package:immich_mobile/domain/models/asset/asset_metadata.model.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart' hide AssetVisibility;
 import 'package:immich_mobile/domain/models/store.model.dart';
 import 'package:immich_mobile/domain/services/asset.service.dart';
+import 'package:immich_mobile/domain/utils/backup_visibility.dart';
 import 'package:immich_mobile/entities/store.entity.dart';
 import 'package:immich_mobile/extensions/network_capability_extensions.dart';
 import 'package:immich_mobile/extensions/platform_extensions.dart';
@@ -365,6 +366,14 @@ class ForegroundUploadService {
 
       if (livePhotoVideoId != null) {
         fields['livePhotoVideoId'] = livePhotoVideoId;
+      }
+
+      final visibility = backupUploadVisibility(
+        isLivePhotoMotion: false,
+        isInLockedAlbum: await _backupRepository.isInLockedAlbum(asset.id),
+      );
+      if (visibility != null) {
+        fields['visibility'] = visibility.name;
       }
 
       // Add cloudId metadata only to the still image, not the motion video, becasue when the sync id happens, the motion video can get associated with the wrong still image.

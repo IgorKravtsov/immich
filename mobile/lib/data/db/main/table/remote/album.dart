@@ -24,6 +24,8 @@ class RemoteAlbumEntity extends Table with DriftDefaultsMixin {
 
   IntColumn get order => intEnum<AlbumAssetOrder>()();
 
+  BoolColumn get isLocked => boolean().withDefault(const Constant(false))();
+
   @override
   Set<Column> get primaryKey => {id};
 }

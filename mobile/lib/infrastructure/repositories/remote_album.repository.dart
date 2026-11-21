@@ -23,10 +23,23 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
 
   Drift get _db => attachedDatabase;
 
-  Future<List<RemoteAlbum>> getAll({Set<SortRemoteAlbumsBy> sortBy = const {SortRemoteAlbumsBy.updatedAt}}) {
-    // Count non-trashed assets via the joined asset table. Filtering trashed assets in the
-    // join condition (instead of the where clause) keeps albums whose assets are all trashed
-    // in the result, the same way truly empty albums are kept
+  Future<List<RemoteAlbum>> getAll({
+    Set<SortRemoteAlbumsBy> sortBy = const {SortRemoteAlbumsBy.updatedAt},
+    bool isLocked = false,
+  }) => _allAlbumsQuery(sortBy: sortBy, isLocked: isLocked).get();
+
+  Stream<List<RemoteAlbum>> watchLocked() =>
+      _allAlbumsQuery(sortBy: const {SortRemoteAlbumsBy.updatedAt}, isLocked: true).watch();
+
+  Stream<Set<String>> watchLockedAlbumIds() {
+    final query = _db.remoteAlbumEntity.selectOnly()
+      ..addColumns([_db.remoteAlbumEntity.id])
+      ..where(_db.remoteAlbumEntity.isLocked.equals(true));
+
+    return query.map((row) => row.read(_db.remoteAlbumEntity.id)!).watch().map((ids) => ids.toSet());
+  }
+
+  Selectable<RemoteAlbum> _allAlbumsQuery({required Set<SortRemoteAlbumsBy> sortBy, required bool isLocked}) {
     final assetCount = _db.remoteAssetEntity.id.count(distinct: true);
 
     final query = _db.remoteAlbumEntity.select().join([
@@ -55,6 +68,7 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
       ),
     ]);
     query
+      ..where(_db.remoteAlbumEntity.isLocked.equals(isLocked))
       ..addColumns([assetCount])
       ..addColumns([_db.userEntity.name, _db.userEntity.id])
       ..addColumns([_db.remoteAlbumUserEntity.userId.count(distinct: true)])
@@ -71,18 +85,16 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
       query.orderBy(orderings);
     }
 
-    return query
-        .map(
-          (row) => row
-              .readTable(_db.remoteAlbumEntity)
-              .toDto(
-                assetCount: row.read(assetCount) ?? 0,
-                ownerId: row.read(_db.userEntity.id)!,
-                ownerName: row.read(_db.userEntity.name)!,
-                isShared: row.read(_db.remoteAlbumUserEntity.userId.count(distinct: true))! > 0,
-              ),
-        )
-        .get();
+    return query.map(
+      (row) => row
+          .readTable(_db.remoteAlbumEntity)
+          .toDto(
+            assetCount: row.read(assetCount) ?? 0,
+            ownerId: row.read(_db.userEntity.id)!,
+            ownerName: row.read(_db.userEntity.name)!,
+            isShared: row.read(_db.remoteAlbumUserEntity.userId.count(distinct: true))! > 0,
+          ),
+    );
   }
 
   Future<RemoteAlbum?> get(String albumId) {
@@ -171,6 +183,7 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
         thumbnailAssetId: Value(album.thumbnailAssetId ?? (assetIds.isNotEmpty ? assetIds.first : null)),
         isActivityEnabled: Value(album.isActivityEnabled),
         order: Value(album.order),
+        isLocked: Value(album.isLocked),
       );
 
       await _db.remoteAlbumEntity.insertOne(entity);
@@ -206,6 +219,7 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
         thumbnailAssetId: Value(album.thumbnailAssetId),
         isActivityEnabled: Value(album.isActivityEnabled),
         order: Value(album.order),
+        isLocked: Value(album.isLocked),
       ),
     );
   }
@@ -337,17 +351,13 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
         );
   }
 
-  Future<void> addUsers(String albumId, List<String> userIds) {
+  Future<void> addUsers(String albumId, List<String> userIds, {AlbumUserRole role = AlbumUserRole.editor}) {
     final albumUsers = userIds.map(
-      (assetId) => RemoteAlbumUserEntityCompanion(
-        albumId: Value(albumId),
-        userId: Value(assetId),
-        role: const Value(AlbumUserRole.editor),
-      ),
+      (userId) => RemoteAlbumUserEntityCompanion(albumId: Value(albumId), userId: Value(userId), role: Value(role)),
     );
 
     return _db.batch((batch) {
-      batch.insertAll(_db.remoteAlbumUserEntity, albumUsers);
+      batch.insertAllOnConflictUpdate(_db.remoteAlbumUserEntity, albumUsers);
     });
   }
 
@@ -587,6 +597,7 @@ extension on RemoteAlbumEntityData {
       assetCount: assetCount,
       ownerName: ownerName,
       isShared: isShared,
+      isLocked: isLocked,
     );
   }
 }

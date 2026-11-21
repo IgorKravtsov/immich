@@ -27,6 +27,7 @@ enum SyncMigrationTask {
   v20260128_ResetAssetV1, // Asset v2.5.0 has width and height information that were edited assets.
   v20260597_ResetAssetV1AssetV2, // Assets didn't include the uploadedAt column.
   v20260701_ResetAlbumsV1, // Album user migration dropped the owner. Sync fresh albums from the server to re-populate them.
+  v20261121_ResetAlbumsV2,
 }
 
 class SyncStreamService {
@@ -145,6 +146,12 @@ class SyncStreamService {
       await _syncApiRepository.deleteSyncAck([SyncEntityType.assetV1, SyncEntityType.assetV2]);
       migrations.add(SyncMigrationTask.v20260597_ResetAssetV1AssetV2.name);
     }
+
+    if (!migrations.contains(SyncMigrationTask.v20261121_ResetAlbumsV2.name) && semVer.supports(.syncLockedAlbumsV1)) {
+      _logger.info("Running pre-sync task: v20261121_ResetAlbumsV2");
+      await _syncApiRepository.deleteSyncAck([SyncEntityType.albumV2]);
+      migrations.add(SyncMigrationTask.v20261121_ResetAlbumsV2.name);
+    }
   }
 
   Future<void> _runPostSyncTasks(List<String> migrations) async {
@@ -204,6 +211,10 @@ class SyncStreamService {
         return _syncStreamRepository.updatePartnerV1(data.cast());
       case SyncEntityType.partnerDeleteV1:
         return _syncStreamRepository.deletePartnerV1(data.cast());
+      case SyncEntityType.partnerLockedAssetV1:
+        return _syncStreamRepository.updatePartnerLockedAssetsV1(data.cast());
+      case SyncEntityType.partnerLockedAssetDeleteV1:
+        return _syncStreamRepository.deletePartnerLockedAssetsV1(data.cast());
       case SyncEntityType.assetV1:
         final remoteSyncAssets = data.cast<SyncAssetV1>();
         await _syncStreamRepository.updateAssetsV1(remoteSyncAssets);
