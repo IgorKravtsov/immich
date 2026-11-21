@@ -39,6 +39,7 @@ import {
   hasPeople,
   inSharedAlbum,
   removeUndefinedKeys,
+  retryOnDeadlock,
   truncatedDate,
   unnest,
   withDefaultVisibility,
@@ -648,6 +649,10 @@ export class AssetRepository {
     }
 
     const sortedIds = [...new Set(ids)].toSorted();
+    await retryOnDeadlock(() => this.updateVisibilityOnce(sortedIds, visibility));
+  }
+
+  private async updateVisibilityOnce(sortedIds: string[], visibility: AssetVisibility): Promise<void> {
     await this.db.transaction().execute(async (trx) => {
       await trx
         .selectFrom('asset')

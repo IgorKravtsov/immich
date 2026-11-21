@@ -104,6 +104,21 @@ export const removeUndefinedKeys = <T extends object>(update: T, template: unkno
 export const ASSET_CHECKSUM_CONSTRAINT = 'UQ_assets_owner_checksum';
 export const VIDEO_STREAM_SESSION_PK_CONSTRAINT = 'video_stream_session_pkey';
 
+const DEADLOCK_DETECTED = '40P01';
+const DEADLOCK_RETRIES = 3;
+
+export const retryOnDeadlock = async <T>(operation: () => Promise<T>): Promise<T> => {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await operation();
+    } catch (error) {
+      if ((error as PostgresError)?.code !== DEADLOCK_DETECTED || attempt >= DEADLOCK_RETRIES) {
+        throw error;
+      }
+    }
+  }
+};
+
 export const isAssetChecksumConstraint = (error: unknown) =>
   (error as PostgresError)?.constraint_name === ASSET_CHECKSUM_CONSTRAINT;
 

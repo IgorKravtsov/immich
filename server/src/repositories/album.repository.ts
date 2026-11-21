@@ -8,7 +8,7 @@ import { AlbumUserCreateDto, MapAlbumDto } from 'src/dtos/album.dto.js';
 import { AlbumUserRole, AssetVisibility } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
-import { asUuid, dummy } from 'src/utils/database.js';
+import { asUuid, dummy, retryOnDeadlock } from 'src/utils/database.js';
 
 const isUnprotectedLink = (eb: ExpressionBuilder<DB, 'shared_link'>) =>
   eb.or([eb('shared_link.password', 'is', null), eb('shared_link.password', '=', '')]);
@@ -250,6 +250,10 @@ export class AlbumRepository {
   }
 
   lockAlbum(albumId: string, ownerId: string): Promise<LockedAlbumChange> {
+    return retryOnDeadlock(() => this.lockAlbumOnce(albumId, ownerId));
+  }
+
+  private lockAlbumOnce(albumId: string, ownerId: string): Promise<LockedAlbumChange> {
     return this.db.transaction().execute(async (trx) => {
       await trx.selectFrom('album').select('album.id').where('album.id', '=', albumId).forUpdate().execute();
       await trx.updateTable('album').set({ isLocked: true }).where('album.id', '=', albumId).execute();
@@ -287,6 +291,10 @@ export class AlbumRepository {
   }
 
   unlockAlbum(albumId: string, ownerId: string): Promise<LockedAlbumChange> {
+    return retryOnDeadlock(() => this.unlockAlbumOnce(albumId, ownerId));
+  }
+
+  private unlockAlbumOnce(albumId: string, ownerId: string): Promise<LockedAlbumChange> {
     return this.db.transaction().execute(async (trx) => {
       await trx.selectFrom('album').select('album.id').where('album.id', '=', albumId).forUpdate().execute();
       await trx.updateTable('album').set({ isLocked: false }).where('album.id', '=', albumId).execute();
@@ -349,6 +357,10 @@ export class AlbumRepository {
       return Promise.resolve([]);
     }
 
+    return retryOnDeadlock(() => this.addAssetsToLockedAlbumOnce(albumId, assetIds));
+  }
+
+  private addAssetsToLockedAlbumOnce(albumId: string, assetIds: string[]): Promise<string[]> {
     return this.db.transaction().execute(async (trx) => {
       const album = await trx
         .selectFrom('album')
@@ -451,13 +463,18 @@ export class AlbumRepository {
       return;
     }
 
-    await this.db
-      .insertInto('album_asset')
-      .expression((eb) =>
-        eb.selectFrom(dummy).select([asUuid(albumId).as('albumId'), sql`unnest(${assetIds}::uuid[])`.as('assetId')]),
-      )
-      .onConflict((oc) => oc.doNothing())
-      .execute();
+    const sortedAssetIds = [...assetIds].toSorted();
+    await retryOnDeadlock(() =>
+      this.db
+        .insertInto('album_asset')
+        .expression((eb) =>
+          eb
+            .selectFrom(dummy)
+            .select([asUuid(albumId).as('albumId'), sql`unnest(${sortedAssetIds}::uuid[])`.as('assetId')]),
+        )
+        .onConflict((oc) => oc.doNothing())
+        .execute(),
+    );
   }
 
   @GenerateSql({
@@ -479,6 +496,7 @@ export class AlbumRepository {
 
     const userIds = albumUsers.map((u) => u.userId);
     const roles = albumUsers.map((u) => u.role);
+    const sortedAssetIds = [...assetIds].toSorted();
 
     const result = await this.db
       .with('album', (db) => db.insertInto('album').values(album).returningAll())
@@ -502,7 +520,10 @@ export class AlbumRepository {
           .expression((eb) =>
             eb
               .selectFrom('album')
-              .select(({ ref }) => [ref('album.id').as('albumId'), sql`unnest(${assetIds}::uuid[])`.as('assetId')]),
+              .select(({ ref }) => [
+                ref('album.id').as('albumId'),
+                sql`unnest(${sortedAssetIds}::uuid[])`.as('assetId'),
+              ]),
           )
           .onConflict((oc) => oc.doNothing())
           .returning(['album_asset.albumId', 'album_asset.assetId']),
@@ -535,12 +556,17 @@ export class AlbumRepository {
     if (values.length === 0) {
       return;
     }
-    await this.db
-      .insertInto('album_asset')
-      .values(values)
-      // Allow idempotent album sync without failing on existing album memberships.
-      .onConflict((oc) => oc.columns(['albumId', 'assetId']).doNothing())
-      .execute();
+    const sortedValues = values.toSorted(
+      (a, b) => a.albumId.localeCompare(b.albumId) || a.assetId.localeCompare(b.assetId),
+    );
+    await retryOnDeadlock(() =>
+      this.db
+        .insertInto('album_asset')
+        .values(sortedValues)
+        // Allow idempotent album sync without failing on existing album memberships.
+        .onConflict((oc) => oc.columns(['albumId', 'assetId']).doNothing())
+        .execute(),
+    );
   }
 
   /**
