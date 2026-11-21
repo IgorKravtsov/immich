@@ -104,8 +104,11 @@ export class AssetService extends BaseService {
 
     const wroteMetadata = await this.updateExif({ id, description, dateTimeOriginal, latitude, longitude, rating });
 
-    const asset = await this.assetRepository.update({ id, ...rest });
-    await this.onVisibilityChanged([id], rest.visibility);
+    const { visibility, ...fields } = rest;
+    if (visibility !== undefined) {
+      await this.assetRepository.updateVisibility([id], visibility);
+    }
+    const asset = await this.assetRepository.update({ id, ...fields });
 
     if (previousMotion && asset) {
       await onAfterUnlink(repos, {
@@ -156,7 +159,7 @@ export class AssetService extends BaseService {
     } = dto;
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
-    const assetDto = omitBy({ isFavorite, visibility, duplicateId }, isUndefined);
+    const assetDto = omitBy({ isFavorite, duplicateId }, isUndefined);
     const exifDto = omitBy(
       {
         latitude,
@@ -189,9 +192,11 @@ export class AssetService extends BaseService {
       await this.assetRepository.updateAll(ids, assetDto);
     }
 
-    await this.onVisibilityChanged(ids, visibility);
+    if (visibility !== undefined) {
+      await this.assetRepository.updateVisibility(ids, visibility);
+    }
 
-    if (shouldWriteSidecar || Object.keys(assetDto).length > 0) {
+    if (shouldWriteSidecar || Object.keys(assetDto).length > 0 || visibility !== undefined) {
       this.resourceRepository.send({
         userIds: [auth.user.id],
         changed: [
@@ -662,20 +667,5 @@ export class AssetService extends BaseService {
     await this.assetEditRepository.replaceAll(id, []);
     this.resourceRepository.send({ userIds: [auth.user.id], changed: [Resource.asset({ id })] });
     await this.jobRepository.queue({ name: JobName.AssetEditThumbnailGeneration, data: { id } });
-  }
-
-  private async onVisibilityChanged(ids: string[], visibility?: AssetVisibility) {
-    if (visibility === undefined) {
-      return;
-    }
-
-    if (visibility === AssetVisibility.Locked) {
-      await this.albumRepository.removeAssetsFromAlbums(ids, { isLocked: false });
-      await this.sharedLinkRepository.removeAssetsFromUnprotected(ids);
-      return;
-    }
-
-    await this.albumRepository.removeAssetsFromAlbums(ids, { isLocked: true });
-    await this.partnerRepository.removeLockedAssetsForAll(ids);
   }
 }

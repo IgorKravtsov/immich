@@ -226,13 +226,11 @@ describe(AssetService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getById.mockResolvedValue(getForAsset(asset));
       mocks.asset.update.mockResolvedValue(getForAsset(asset));
-      mocks.sharedLink.removeAssetsFromUnprotected.mockResolvedValue();
 
       await sut.update(auth, asset.id, { visibility: AssetVisibility.Locked });
 
-      expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledWith([asset.id], { isLocked: false });
-      expect(mocks.sharedLink.removeAssetsFromUnprotected).toHaveBeenCalledWith([asset.id]);
-      expect(mocks.partner.removeLockedAssetsForAll).not.toHaveBeenCalled();
+      expect(mocks.asset.updateVisibility).toHaveBeenCalledWith([asset.id], AssetVisibility.Locked);
+      expect(mocks.asset.update).toHaveBeenCalledWith({ id: asset.id });
     });
 
     it('should remove an unlocked asset from locked albums and partner grants', async () => {
@@ -244,8 +242,7 @@ describe(AssetService.name, () => {
 
       await sut.update(auth, asset.id, { visibility: AssetVisibility.Archive });
 
-      expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledWith([asset.id], { isLocked: true });
-      expect(mocks.partner.removeLockedAssetsForAll).toHaveBeenCalledWith([asset.id]);
+      expect(mocks.asset.updateVisibility).toHaveBeenCalledWith([asset.id], AssetVisibility.Archive);
     });
 
     it('should not tell anyone when nothing changes', async () => {
@@ -504,22 +501,18 @@ describe(AssetService.name, () => {
 
       await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], visibility: AssetVisibility.Archive });
 
-      expect(mocks.asset.updateAll).toHaveBeenCalledWith(['asset-1', 'asset-2'], {
-        visibility: AssetVisibility.Archive,
-      });
+      expect(mocks.asset.updateVisibility).toHaveBeenCalledWith(['asset-1', 'asset-2'], AssetVisibility.Archive);
     });
 
     it('should remove newly locked assets from regular albums only', async () => {
       const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set(['asset-1', 'asset-2']));
-      mocks.sharedLink.removeAssetsFromUnprotected.mockResolvedValue();
 
       await sut.updateAll(auth, { ids: ['asset-1', 'asset-2'], visibility: AssetVisibility.Locked });
 
-      expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledTimes(1);
-      expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledWith(['asset-1', 'asset-2'], { isLocked: false });
-      expect(mocks.sharedLink.removeAssetsFromUnprotected).toHaveBeenCalledWith(['asset-1', 'asset-2']);
-      expect(mocks.partner.removeLockedAssetsForAll).not.toHaveBeenCalled();
+      expect(mocks.asset.updateVisibility).toHaveBeenCalledTimes(1);
+      expect(mocks.asset.updateVisibility).toHaveBeenCalledWith(['asset-1', 'asset-2'], AssetVisibility.Locked);
+      expect(mocks.asset.updateAll).not.toHaveBeenCalled();
     });
 
     it('should remove unlocked assets from locked albums and partner grants', async () => {
@@ -528,9 +521,7 @@ describe(AssetService.name, () => {
 
       await sut.updateAll(auth, { ids: ['asset-1'], visibility: AssetVisibility.Timeline });
 
-      expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledTimes(1);
-      expect(mocks.album.removeAssetsFromAlbums).toHaveBeenCalledWith(['asset-1'], { isLocked: true });
-      expect(mocks.partner.removeLockedAssetsForAll).toHaveBeenCalledWith(['asset-1']);
+      expect(mocks.asset.updateVisibility).toHaveBeenCalledWith(['asset-1'], AssetVisibility.Timeline);
     });
 
     it('should not touch albums or partner grants when visibility is unchanged', async () => {
@@ -538,8 +529,7 @@ describe(AssetService.name, () => {
 
       await sut.updateAll(AuthFactory.create(), { ids: ['asset-1'], isFavorite: true });
 
-      expect(mocks.album.removeAssetsFromAlbums).not.toHaveBeenCalled();
-      expect(mocks.partner.removeLockedAssetsForAll).not.toHaveBeenCalled();
+      expect(mocks.asset.updateVisibility).not.toHaveBeenCalled();
     });
 
     it('should emit a websocket event if a sidecar write is not necessary', async () => {
@@ -551,9 +541,7 @@ describe(AssetService.name, () => {
 
       await sut.updateAll(auth, { ids: [asset1.id, asset2.id], visibility: AssetVisibility.Archive });
 
-      expect(mocks.asset.updateAll).toHaveBeenCalledWith([asset1.id, asset2.id], {
-        visibility: AssetVisibility.Archive,
-      });
+      expect(mocks.asset.updateVisibility).toHaveBeenCalledWith([asset1.id, asset2.id], AssetVisibility.Archive);
       expect(mocks.job.queueAll).not.toHaveBeenCalled();
       expect(mocks.websocket.clientSend).toHaveBeenCalledTimes(2);
     });

@@ -299,11 +299,23 @@ where
 limit
   $2
 
--- AssetRepository.updateAll
+-- AssetRepository.updateVisibility
+begin
+select
+  "asset"."id"
+from
+  "asset"
+where
+  "asset"."id" in ($1)
+order by
+  "asset"."id"
+for update
 update "asset"
 set
+  "visibility" = $1
 where
-  "id" = any ($1::uuid[])
+  "asset"."id" in ($2)
+rollback
 
 -- AssetRepository.getByChecksum
 select

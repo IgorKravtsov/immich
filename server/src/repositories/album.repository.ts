@@ -10,6 +10,16 @@ import { DB } from 'src/schema/index.js';
 import { AlbumTable } from 'src/schema/tables/album.table.js';
 import { asUuid, dummy } from 'src/utils/database.js';
 
+const isUnprotectedLink = (eb: ExpressionBuilder<DB, 'shared_link'>) =>
+  eb.or([eb('shared_link.password', 'is', null), eb('shared_link.password', '=', '')]);
+
+export type LockedAlbumChange = {
+  lockedAssetIds: string[];
+  unlockedAssetIds: string[];
+  removedAssetIds: string[];
+  removedSharedLinks: { id: string; userId: string }[];
+};
+
 export interface AlbumAssetCount {
   albumId: string;
   assetCount: number;
@@ -239,41 +249,162 @@ export class AlbumRepository {
     await this.db.deleteFrom('album_asset').where('album_asset.assetId', 'in', assetIds).execute();
   }
 
-  @GenerateSql({ params: [[DummyValue.UUID], { isLocked: false }] })
-  @Chunked()
-  async removeAssetsFromAlbums(assetIds: string[], { isLocked }: { isLocked: boolean }): Promise<void> {
+  lockAlbum(albumId: string, ownerId: string): Promise<LockedAlbumChange> {
+    return this.db.transaction().execute(async (trx) => {
+      await trx.selectFrom('album').select('album.id').where('album.id', '=', albumId).forUpdate().execute();
+      await trx.updateTable('album').set({ isLocked: true }).where('album.id', '=', albumId).execute();
+
+      const members = await trx
+        .selectFrom('album_asset')
+        .innerJoin('asset', 'asset.id', 'album_asset.assetId')
+        .select(['asset.id', 'asset.ownerId'])
+        .where('album_asset.albumId', '=', albumId)
+        .orderBy('asset.id')
+        .forUpdate('asset')
+        .execute();
+      const lockedAssetIds = members.filter((member) => member.ownerId === ownerId).map(({ id }) => id);
+      const removedAssetIds = members.filter((member) => member.ownerId !== ownerId).map(({ id }) => id);
+
+      if (removedAssetIds.length > 0) {
+        await trx
+          .deleteFrom('album_asset')
+          .where('album_asset.albumId', '=', albumId)
+          .where('album_asset.assetId', 'in', removedAssetIds)
+          .execute();
+      }
+
+      await this.lockAssetsInTransaction(trx, lockedAssetIds);
+
+      const removedSharedLinks = await trx
+        .deleteFrom('shared_link')
+        .where('shared_link.albumId', '=', albumId)
+        .where(isUnprotectedLink)
+        .returning(['shared_link.id', 'shared_link.userId'])
+        .execute();
+
+      return { lockedAssetIds, unlockedAssetIds: [], removedAssetIds, removedSharedLinks };
+    });
+  }
+
+  unlockAlbum(albumId: string, ownerId: string): Promise<LockedAlbumChange> {
+    return this.db.transaction().execute(async (trx) => {
+      await trx.selectFrom('album').select('album.id').where('album.id', '=', albumId).forUpdate().execute();
+      await trx.updateTable('album').set({ isLocked: false }).where('album.id', '=', albumId).execute();
+
+      const members = await trx
+        .selectFrom('album_asset')
+        .innerJoin('asset', 'asset.id', 'album_asset.assetId')
+        .select(['asset.id', 'asset.ownerId'])
+        .where('album_asset.albumId', '=', albumId)
+        .orderBy('asset.id')
+        .forUpdate('asset')
+        .execute();
+      const memberIds = members.map(({ id }) => id);
+      const otherLockedRows =
+        memberIds.length === 0
+          ? []
+          : await trx
+              .selectFrom('album_asset')
+              .innerJoin('album', 'album.id', 'album_asset.albumId')
+              .select('album_asset.assetId')
+              .where('album_asset.assetId', 'in', memberIds)
+              .where('album_asset.albumId', '!=', albumId)
+              .where('album.isLocked', '=', true)
+              .where('album.deletedAt', 'is', null)
+              .execute();
+      const inOtherLockedAlbum = new Set(otherLockedRows.map(({ assetId }) => assetId));
+
+      const unlockedAssetIds = members
+        .filter((member) => member.ownerId === ownerId && !inOtherLockedAlbum.has(member.id))
+        .map(({ id }) => id);
+      const unlocked = new Set(unlockedAssetIds);
+      const removedAssetIds = memberIds.filter((id) => !unlocked.has(id));
+
+      if (removedAssetIds.length > 0) {
+        await trx
+          .deleteFrom('album_asset')
+          .where('album_asset.albumId', '=', albumId)
+          .where('album_asset.assetId', 'in', removedAssetIds)
+          .execute();
+      }
+
+      if (unlockedAssetIds.length > 0) {
+        await trx
+          .updateTable('asset')
+          .set({ visibility: AssetVisibility.Timeline })
+          .where('asset.id', 'in', unlockedAssetIds)
+          .execute();
+        await trx
+          .deleteFrom('partner_locked_asset')
+          .where('partner_locked_asset.assetId', 'in', unlockedAssetIds)
+          .execute();
+      }
+
+      return { lockedAssetIds: [], unlockedAssetIds, removedAssetIds, removedSharedLinks: [] };
+    });
+  }
+
+  addAssetsToLockedAlbum(albumId: string, assetIds: string[]): Promise<string[]> {
+    if (assetIds.length === 0) {
+      return Promise.resolve([]);
+    }
+
+    return this.db.transaction().execute(async (trx) => {
+      const album = await trx
+        .selectFrom('album')
+        .select('album.id')
+        .where('album.id', '=', albumId)
+        .where('album.isLocked', '=', true)
+        .where('album.deletedAt', 'is', null)
+        .forShare()
+        .executeTakeFirst();
+      if (!album) {
+        return [];
+      }
+
+      const sortedAssetIds = [...new Set(assetIds)].toSorted();
+      await trx
+        .selectFrom('asset')
+        .select('asset.id')
+        .where('asset.id', 'in', sortedAssetIds)
+        .orderBy('asset.id')
+        .forUpdate()
+        .execute();
+      await this.lockAssetsInTransaction(trx, sortedAssetIds);
+
+      const inserted = await trx
+        .insertInto('album_asset')
+        .values(sortedAssetIds.map((assetId) => ({ albumId, assetId })))
+        .onConflict((oc) => oc.doNothing())
+        .returning('album_asset.assetId')
+        .execute();
+      return inserted.map(({ assetId }) => assetId);
+    });
+  }
+
+  private async lockAssetsInTransaction(trx: Kysely<DB>, assetIds: string[]) {
     if (assetIds.length === 0) {
       return;
     }
 
-    await this.db
+    await trx
+      .updateTable('asset')
+      .set({ visibility: AssetVisibility.Locked })
+      .where('asset.id', 'in', assetIds)
+      .where('asset.visibility', '!=', AssetVisibility.Locked)
+      .execute();
+    await trx
       .deleteFrom('album_asset')
       .where('album_asset.assetId', 'in', assetIds)
       .where('album_asset.albumId', 'in', (eb) =>
-        eb.selectFrom('album').select('album.id').where('album.isLocked', '=', isLocked),
+        eb.selectFrom('album').select('album.id').where('album.isLocked', '=', false),
       )
       .execute();
-  }
-
-  @GenerateSql({ params: [DummyValue.UUID] })
-  getAssetsForLockChange(albumId: string) {
-    return this.db
-      .selectFrom('album_asset')
-      .innerJoin('asset', 'asset.id', 'album_asset.assetId')
-      .where('album_asset.albumId', '=', albumId)
-      .select(['asset.id', 'asset.ownerId', 'asset.visibility'])
-      .select((eb) =>
-        eb
-          .exists(
-            eb
-              .selectFrom('album_asset as other_album_asset')
-              .innerJoin('album as other_album', 'other_album.id', 'other_album_asset.albumId')
-              .whereRef('other_album_asset.assetId', '=', 'asset.id')
-              .where('other_album_asset.albumId', '!=', albumId)
-              .where('other_album.isLocked', '=', true)
-              .where('other_album.deletedAt', 'is', null),
-          )
-          .as('inOtherLockedAlbum'),
+    await trx
+      .deleteFrom('shared_link_asset')
+      .where('shared_link_asset.assetId', 'in', assetIds)
+      .where('shared_link_asset.sharedLinkId', 'in', (eb) =>
+        eb.selectFrom('shared_link').select('shared_link.id').where(isUnprotectedLink),
       )
       .execute();
   }

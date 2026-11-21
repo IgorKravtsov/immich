@@ -162,17 +162,3 @@ where
   and "sharedWithId" = $2
 order by
   "createdAt" asc
-
--- PartnerRepository.removeLockedAssetsForAll
-delete from "partner_locked_asset"
-where
-  "assetId" in ($1)
-
--- PartnerRepository.getLockedAssetPartnerIds
-select distinct
-  "sharedWithId"
-from
-  "partner_locked_asset"
-where
-  "sharedById" = $1
-  and "assetId" in ($2)

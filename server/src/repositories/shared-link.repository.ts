@@ -12,7 +12,7 @@ import { jsonArrayFrom, jsonObjectFrom } from 'kysely/helpers/postgres';
 import { omit } from 'lodash-es';
 import { InjectKysely } from 'nestjs-kysely';
 import { Album, columns } from 'src/database.js';
-import { Chunked, ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
+import { ChunkedArray, DummyValue, GenerateSql } from 'src/decorators.js';
 import { AlbumUserRole, SharedLinkType } from 'src/enum.js';
 import { DB } from 'src/schema/index.js';
 import { AssetExifTable } from 'src/schema/tables/asset-exif.table.js';
@@ -224,35 +224,6 @@ export class SharedLinkRepository {
 
   async remove(id: string): Promise<void> {
     await this.db.deleteFrom('shared_link').where('shared_link.id', '=', id).execute();
-  }
-
-  @GenerateSql({ params: [[DummyValue.UUID]] })
-  @Chunked()
-  async removeAssetsFromUnprotected(assetIds: string[]): Promise<void> {
-    if (assetIds.length === 0) {
-      return;
-    }
-
-    await this.db
-      .deleteFrom('shared_link_asset')
-      .where('shared_link_asset.assetId', 'in', assetIds)
-      .where('shared_link_asset.sharedLinkId', 'in', (eb) =>
-        eb
-          .selectFrom('shared_link')
-          .select('shared_link.id')
-          .where((eb) => eb.or([eb('shared_link.password', 'is', null), eb('shared_link.password', '=', '')])),
-      )
-      .execute();
-  }
-
-  @GenerateSql({ params: [DummyValue.UUID] })
-  removeUnprotectedForAlbum(albumId: string) {
-    return this.db
-      .deleteFrom('shared_link')
-      .where('shared_link.albumId', '=', albumId)
-      .where((eb) => eb.or([eb('shared_link.password', 'is', null), eb('shared_link.password', '=', '')]))
-      .returning(['shared_link.id', 'shared_link.userId'])
-      .execute();
   }
 
   @ChunkedArray({ paramIndex: 1 })

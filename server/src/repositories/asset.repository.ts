@@ -642,6 +642,48 @@ export class AssetRepository {
 
   @GenerateSql({ params: [[DummyValue.UUID], {}] })
   @Chunked()
+  async updateVisibility(ids: string[], visibility: AssetVisibility): Promise<void> {
+    if (ids.length === 0) {
+      return;
+    }
+
+    const sortedIds = [...new Set(ids)].toSorted();
+    await this.db.transaction().execute(async (trx) => {
+      await trx
+        .selectFrom('asset')
+        .select('asset.id')
+        .where('asset.id', 'in', sortedIds)
+        .orderBy('asset.id')
+        .forUpdate()
+        .execute();
+      await trx.updateTable('asset').set({ visibility }).where('asset.id', 'in', sortedIds).execute();
+
+      const isLocked = visibility === AssetVisibility.Locked;
+      await trx
+        .deleteFrom('album_asset')
+        .where('album_asset.assetId', 'in', sortedIds)
+        .where('album_asset.albumId', 'in', (eb) =>
+          eb.selectFrom('album').select('album.id').where('album.isLocked', '=', !isLocked),
+        )
+        .execute();
+
+      if (isLocked) {
+        await trx
+          .deleteFrom('shared_link_asset')
+          .where('shared_link_asset.assetId', 'in', sortedIds)
+          .where('shared_link_asset.sharedLinkId', 'in', (eb) =>
+            eb
+              .selectFrom('shared_link')
+              .select('shared_link.id')
+              .where((eb) => eb.or([eb('shared_link.password', 'is', null), eb('shared_link.password', '=', '')])),
+          )
+          .execute();
+      } else {
+        await trx.deleteFrom('partner_locked_asset').where('partner_locked_asset.assetId', 'in', sortedIds).execute();
+      }
+    });
+  }
+
   async updateAll(ids: string[], options: Updateable<AssetTable>): Promise<void> {
     if (ids.length === 0) {
       return;
