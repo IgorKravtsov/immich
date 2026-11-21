@@ -524,7 +524,7 @@ export class NotificationService extends BaseService {
         : isInvite
           ? `${senderName} shared an album (${album.albumName}) with you`
           : `New media has been added to the album (${album.albumName})`,
-      data: JSON.stringify({ albumId: album.id }),
+      data: JSON.stringify(album.isLocked ? { albumId: album.id, isLocked: true } : { albumId: album.id }),
     });
 
     this.websocketRepository.clientSend('on_notification', userId, mapNotification(item));

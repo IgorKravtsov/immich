@@ -306,6 +306,12 @@ void main() {
       expect(types, contains(SyncRequestType.partnerLockedAssetsV1.toJson()));
     });
 
+    test('requests partner locked assets from the locked albums release candidate', () async {
+      final types = await requestedTypes(const SemVer(major: 3, minor: 4, patch: 0, prerelease: 0));
+
+      expect(types, contains(SyncRequestType.partnerLockedAssetsV1.toJson()));
+    });
+
     test('does not request partner locked assets from an older server', () async {
       final types = await requestedTypes(const SemVer(major: 3, minor: 3, patch: 0));
 

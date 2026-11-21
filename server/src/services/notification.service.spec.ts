@@ -440,7 +440,10 @@ describe(NotificationService.name, () => {
       );
 
       expect(mocks.notification.create).toHaveBeenCalledWith(
-        expect.objectContaining({ description: 'foo gave you access to a locked album' }),
+        expect.objectContaining({
+          description: 'foo gave you access to a locked album',
+          data: JSON.stringify({ albumId: album.id, isLocked: true }),
+        }),
       );
       expect(mocks.email.renderEmail).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ albumName: 'Locked album', cid: undefined }) }),
