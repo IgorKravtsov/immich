@@ -3,6 +3,7 @@ import '../table/remote/stack.dart';
 import '../table/local/asset.dart';
 import '../table/local/album.dart';
 import '../table/local/album_asset.dart';
+import '../table/remote/album.dart';
 
 mergedAsset:
 SELECT
@@ -86,6 +87,12 @@ AND NOT EXISTS (
     INNER JOIN local_album_entity la on laa.album_id = la.id
     WHERE laa.asset_id = lae.id AND la.backup_selection = 2 -- excluded
 )
+AND NOT EXISTS (
+    SELECT 1 FROM local_album_asset_entity laa
+    INNER JOIN local_album_entity la on laa.album_id = la.id
+    INNER JOIN remote_album_entity ra on ra.id = la.linked_remote_album_id
+    WHERE laa.asset_id = lae.id AND ra.is_locked = 1
+)
 AND lae.group_date IS NOT NULL
 ORDER BY group_date DESC, created_at DESC
 LIMIT $limit;
@@ -134,6 +141,12 @@ FROM
 		SELECT 1 FROM local_album_asset_entity laa
 		INNER JOIN local_album_entity la on laa.album_id = la.id
 		WHERE laa.asset_id = lae.id AND la.backup_selection = 2 -- excluded
+	)
+	AND NOT EXISTS (
+		SELECT 1 FROM local_album_asset_entity laa
+		INNER JOIN local_album_entity la on laa.album_id = la.id
+		INNER JOIN remote_album_entity ra on ra.id = la.linked_remote_album_id
+		WHERE laa.asset_id = lae.id AND ra.is_locked = 1
 	)
 	AND lae.group_date IS NOT NULL
 )

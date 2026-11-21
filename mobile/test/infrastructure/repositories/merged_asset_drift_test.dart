@@ -1,6 +1,7 @@
 import 'package:drift/drift.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:immich_mobile/domain/models/timeline.model.dart';
+import 'package:immich_mobile/utils/option.dart';
 
 import '../../medium/repository_context.dart';
 
@@ -86,6 +87,27 @@ void main() {
       ('remote', '2024-04-26'),
       ('older', '2024-04-25'),
     ]);
+  });
+
+  test('device photos in an album linked to a locked album stay hidden before they are hashed', () async {
+    await ctx.newRemoteAlbum(id: 'locked-album', ownerId: userId, isLocked: true);
+    await ctx.newRemoteAlbum(id: 'regular-album', ownerId: userId);
+    await ctx.newLocalAlbum(id: 'hidden', backupSelection: .selected, linkedRemoteAlbumId: 'locked-album');
+    await ctx.newLocalAlbum(id: 'camera', backupSelection: .selected, linkedRemoteAlbumId: 'regular-album');
+    await ctx.newLocalAsset(
+      id: 'unhashed-secret',
+      checksumOption: const Option.none(),
+      createdAt: DateTime(2024, 4, 26, 14),
+    );
+    await ctx.newLocalAsset(
+      id: 'unhashed-photo',
+      checksumOption: const Option.none(),
+      createdAt: DateTime(2024, 4, 26, 12),
+    );
+    await ctx.newLocalAlbumAsset(albumId: 'hidden', assetId: 'unhashed-secret');
+    await ctx.newLocalAlbumAsset(albumId: 'camera', assetId: 'unhashed-photo');
+
+    expect(await headerForEachAsset(GroupAssetsBy.day), [('unhashed-photo', '2024-04-26')]);
   });
 
   test('month grouping keeps every asset under its own month header', () async {

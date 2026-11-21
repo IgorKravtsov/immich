@@ -57,7 +57,7 @@ void main() {
         ''');
 
         final db = Drift(schema.newConnection());
-        await verifier.migrateAndValidate(db, 35);
+        await verifier.migrateAndValidate(db, db.schemaVersion);
         await backfillAssetGroupDates(db);
 
         final result = await loadBuckets(db);
@@ -77,7 +77,7 @@ void main() {
         ''');
 
         final db = Drift(schema.newConnection());
-        await verifier.migrateAndValidate(db, 35);
+        await verifier.migrateAndValidate(db, db.schemaVersion);
 
         await db.customStatement(
           "UPDATE local_asset_entity SET created_at = updated_at WHERE julianday(created_at) > julianday(updated_at)",
