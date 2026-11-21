@@ -4,6 +4,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
+import 'package:immich_mobile/domain/services/remote_album.service.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/presentation/widgets/album/album_tile.dart';
@@ -17,26 +18,29 @@ import 'package:immich_mobile/providers/infrastructure/timeline.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/utils/error_handler.dart';
+import 'package:immich_mobile/widgets/common/immich_toast.dart';
 import 'package:immich_mobile/widgets/common/mesmerizing_sliver_app_bar.dart';
 
 enum LockedFolderTab { photos, albums }
 
 @RoutePage()
-class LockedFolderPage extends StatefulWidget {
+class LockedFolderPage extends ConsumerStatefulWidget {
   const LockedFolderPage({super.key});
 
   @override
-  State<LockedFolderPage> createState() => _LockedFolderPageState();
+  ConsumerState<LockedFolderPage> createState() => _LockedFolderPageState();
 }
 
-class _LockedFolderPageState extends State<LockedFolderPage> {
+class _LockedFolderPageState extends ConsumerState<LockedFolderPage> {
   LockedFolderTab _tab = LockedFolderTab.photos;
 
   void _selectTab(LockedFolderTab tab) => setState(() => _tab = tab);
 
   @override
   Widget build(BuildContext context) {
-    final tabBar = _LockedFolderTabBar(selected: _tab, onSelected: _selectTab);
+    final lockedAlbumsSupported = ref.watch(lockedAlbumsSupportedProvider);
+    final tab = lockedAlbumsSupported ? _tab : LockedFolderTab.photos;
+    final tabBar = _LockedFolderTabBar(selected: tab, onSelected: _selectTab);
 
     return LockedSessionScope(
       lockOnPop: true,
@@ -53,11 +57,11 @@ class _LockedFolderPageState extends State<LockedFolderPage> {
             return timelineService;
           }),
         ],
-        child: switch (_tab) {
+        child: switch (tab) {
           LockedFolderTab.photos => Timeline(
             appBar: MesmerizingSliverAppBar(title: context.t.locked_folder),
-            topSliverWidget: SliverToBoxAdapter(child: tabBar),
-            topSliverWidgetHeight: _LockedFolderTabBar.height,
+            topSliverWidget: lockedAlbumsSupported ? SliverToBoxAdapter(child: tabBar) : null,
+            topSliverWidgetHeight: lockedAlbumsSupported ? _LockedFolderTabBar.height : null,
             bottomSheet: const LockedFolderBottomSheet(),
           ),
           LockedFolderTab.albums => _LockedAlbumsView(tabBar: tabBar),
@@ -121,6 +125,10 @@ class _LockedAlbumsView extends ConsumerWidget {
 
       try {
         await ref.read(remoteAlbumProvider.notifier).createAlbum(title: name.trim(), isLocked: true);
+      } on LockedAlbumStateNotAppliedException {
+        if (context.mounted) {
+          ImmichToast.show(context: context, msg: context.t.locked_album_not_applied, toastType: ToastType.error);
+        }
       } catch (error, stack) {
         handleError(error, stack: stack, description: 'Failed to create locked album');
       }

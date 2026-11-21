@@ -39,6 +39,10 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
     return query.map((row) => row.read(_db.remoteAlbumEntity.id)!).watch().map((ids) => ids.toSet());
   }
 
+  Expression<bool> _countedInAlbum() =>
+      _db.remoteAlbumEntity.isLocked.equals(true) |
+      _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.locked).not();
+
   Selectable<RemoteAlbum> _allAlbumsQuery({required Set<SortRemoteAlbumsBy> sortBy, required bool isLocked}) {
     final assetCount = _db.remoteAssetEntity.id.count(distinct: true);
 
@@ -51,7 +55,8 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
       leftOuterJoin(
         _db.remoteAssetEntity,
         _db.remoteAssetEntity.id.equalsExp(_db.remoteAlbumAssetEntity.assetId) &
-            _db.remoteAssetEntity.deletedAt.isNull(),
+            _db.remoteAssetEntity.deletedAt.isNull() &
+            _countedInAlbum(),
         useColumns: false,
       ),
       leftOuterJoin(
@@ -110,7 +115,8 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
             leftOuterJoin(
               _db.remoteAssetEntity,
               _db.remoteAssetEntity.id.equalsExp(_db.remoteAlbumAssetEntity.assetId) &
-                  _db.remoteAssetEntity.deletedAt.isNull(),
+                  _db.remoteAssetEntity.deletedAt.isNull() &
+                  _countedInAlbum(),
               useColumns: false,
             ),
             leftOuterJoin(
@@ -204,6 +210,10 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
         await _db.batch((batch) {
           batch.insertAll(_db.remoteAlbumAssetEntity, albumAssets);
         });
+
+        if (album.isLocked) {
+          await _lockAssets((assetId) => assetId.isIn(assetIds));
+        }
       }
     });
   }
@@ -222,6 +232,74 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
         isLocked: Value(album.isLocked),
       ),
     );
+  }
+
+  Future<void> applyLockState(RemoteAlbum album) => _db.transaction(() async {
+    await updateAlbum(album);
+
+    final albumAssets = _db.remoteAlbumAssetEntity;
+    await (_db.delete(albumAssets)..where(
+          (row) =>
+              row.albumId.equals(album.id) & row.assetId.isNotInQuery(_ownedAlbumAssetIds(album.id, album.ownerId)),
+        ))
+        .go();
+
+    if (album.isLocked) {
+      await _lockAssets((assetId) => assetId.isInQuery(_ownedAlbumAssetIds(album.id, album.ownerId)));
+      return;
+    }
+
+    await (_db.delete(
+      albumAssets,
+    )..where((row) => row.albumId.equals(album.id) & row.assetId.isInQuery(_lockedAlbumAssetIds(album.id)))).go();
+
+    await (_db.update(_db.remoteAssetEntity)..where((row) => row.id.isInQuery(_albumAssetIds(album.id)))).write(
+      const RemoteAssetEntityCompanion(visibility: Value(AssetVisibility.timeline)),
+    );
+  });
+
+  Future<bool> isLocked(String albumId) async {
+    final query = _db.remoteAlbumEntity.selectOnly()
+      ..addColumns([_db.remoteAlbumEntity.isLocked])
+      ..where(_db.remoteAlbumEntity.id.equals(albumId));
+
+    final row = await query.getSingleOrNull();
+    return row?.read(_db.remoteAlbumEntity.isLocked) ?? false;
+  }
+
+  Future<void> _lockAssets(Expression<bool> Function(GeneratedColumn<String> assetId) selectAssets) async {
+    await (_db.update(_db.remoteAssetEntity)..where((row) => selectAssets(row.id))).write(
+      const RemoteAssetEntityCompanion(visibility: Value(AssetVisibility.locked)),
+    );
+
+    await (_db.delete(
+      _db.remoteAlbumAssetEntity,
+    )..where((row) => selectAssets(row.assetId) & row.albumId.isInQuery(_albumIdsWithLockState(false)))).go();
+  }
+
+  JoinedSelectStatement<HasResultSet, dynamic> _albumIdsWithLockState(bool isLocked) =>
+      _db.remoteAlbumEntity.selectOnly()
+        ..addColumns([_db.remoteAlbumEntity.id])
+        ..where(_db.remoteAlbumEntity.isLocked.equals(isLocked));
+
+  JoinedSelectStatement<HasResultSet, dynamic> _albumAssetIds(String albumId) => _db.remoteAlbumAssetEntity.selectOnly()
+    ..addColumns([_db.remoteAlbumAssetEntity.assetId])
+    ..where(_db.remoteAlbumAssetEntity.albumId.equals(albumId));
+
+  JoinedSelectStatement<HasResultSet, dynamic> _ownedAlbumAssetIds(String albumId, String ownerId) =>
+      _db.remoteAssetEntity.selectOnly()
+        ..addColumns([_db.remoteAssetEntity.id])
+        ..where(
+          _db.remoteAssetEntity.ownerId.equals(ownerId) & _db.remoteAssetEntity.id.isInQuery(_albumAssetIds(albumId)),
+        );
+
+  JoinedSelectStatement<HasResultSet, dynamic> _lockedAlbumAssetIds(String exceptAlbumId) {
+    final otherAlbums = _db.alias(_db.remoteAlbumEntity, 'other_locked_album');
+    final otherAlbumAssets = _db.alias(_db.remoteAlbumAssetEntity, 'other_locked_album_asset');
+    return otherAlbumAssets.selectOnly()
+      ..addColumns([otherAlbumAssets.assetId])
+      ..join([innerJoin(otherAlbums, otherAlbums.id.equalsExp(otherAlbumAssets.albumId), useColumns: false)])
+      ..where(otherAlbums.isLocked.equals(true) & otherAlbums.id.equals(exceptAlbumId).not());
   }
 
   Future<void> removeAssets(String albumId, List<String> assetIds) {
@@ -310,6 +388,10 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
         batch.insertAll(_db.remoteAlbumAssetEntity, albumAssets);
       });
 
+      if (await isLocked(albumId)) {
+        await _lockAssets((assetId) => assetId.isIn(assetIds));
+      }
+
       final album = _db.update(_db.remoteAlbumEntity)
         ..where((row) => row.id.equals(albumId) & row.thumbnailAssetId.isNull());
 
@@ -327,6 +409,7 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
     required String remoteId,
     required String ownerId,
     required LocalAsset source,
+    AssetVisibility visibility = AssetVisibility.timeline,
   }) async {
     await _db
         .into(_db.remoteAssetEntity)
@@ -343,7 +426,7 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
             height: Value(source.height),
             durationMs: Value(source.durationMs),
             isFavorite: Value(source.isFavorite),
-            visibility: const Value(AssetVisibility.timeline),
+            visibility: Value(visibility),
             isEdited: Value(source.isEdited),
             groupDate: Value(timelineGroupDate(source.createdAt.toLocal())),
           ),
@@ -545,7 +628,8 @@ class RemoteAlbumRepository extends DatabaseAccessor<Drift> with $RemoteAlbumRep
             leftOuterJoin(
               _db.remoteAssetEntity,
               _db.remoteAssetEntity.id.equalsExp(_db.remoteAlbumAssetEntity.assetId) &
-                  _db.remoteAssetEntity.deletedAt.isNull(),
+                  _db.remoteAssetEntity.deletedAt.isNull() &
+                  _countedInAlbum(),
               useColumns: false,
             ),
             leftOuterJoin(

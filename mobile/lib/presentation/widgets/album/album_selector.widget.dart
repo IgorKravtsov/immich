@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/constants/enums.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
+import 'package:immich_mobile/domain/utils/album_cover.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/theme_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
@@ -664,7 +665,10 @@ class _GridAlbumCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final albumThumbnailAsset = ref.watch(assetServiceProvider).getRemoteAsset(album.thumbnailAssetId ?? "");
+    final albumThumbnailAsset = ref
+        .watch(assetServiceProvider)
+        .getRemoteAsset(album.thumbnailAssetId ?? "")
+        .then((cover) => visibleAlbumCover(album, cover));
 
     return GestureDetector(
       onTap: () => onAlbumSelected(album),

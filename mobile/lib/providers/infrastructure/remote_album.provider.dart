@@ -7,13 +7,16 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
+import 'package:immich_mobile/domain/models/server_capability.model.dart';
 import 'package:immich_mobile/domain/models/user.model.dart';
 import 'package:immich_mobile/domain/services/remote_album.service.dart';
 import 'package:immich_mobile/models/albums/album_search.model.dart';
 import 'package:immich_mobile/providers/album/album_sort_by_options.provider.dart';
 import 'package:immich_mobile/providers/album/pending_album_uploads.provider.dart';
+import 'package:immich_mobile/providers/background_sync.provider.dart';
 import 'package:immich_mobile/providers/backup/asset_upload_progress.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
+import 'package:immich_mobile/providers/server_info.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/services/foreground_upload.service.dart';
 import 'package:logging/logging.dart';
@@ -180,6 +183,7 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
       final updatedAlbum = await _remoteAlbumService.setLocked(albumId, isLocked: isLocked);
       final others = state.albums.where((album) => album.id != albumId);
       state = state.copyWith(albums: updatedAlbum.isLocked ? others.toList() : [...others, updatedAlbum]);
+      unawaited(ref.read(backgroundSyncProvider).syncRemote());
       return updatedAlbum;
     } catch (error, stack) {
       _logger.severe('Failed to change locked state of album', error, stack);
@@ -322,6 +326,10 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
     return _remoteAlbumService.setActivityStatus(albumId, enabled);
   }
 }
+
+final lockedAlbumsSupportedProvider = Provider<bool>(
+  (ref) => ref.watch(serverInfoProvider.select((state) => state.serverVersion.supports(.syncLockedAlbumsV1))),
+);
 
 final lockedAlbumsProvider = StreamProvider.autoDispose<List<RemoteAlbum>>(
   (ref) => ref.watch(remoteAlbumServiceProvider).watchLocked(),

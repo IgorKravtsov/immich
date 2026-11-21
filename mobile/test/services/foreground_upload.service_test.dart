@@ -153,6 +153,25 @@ void main() {
       expect(captured[0].containsKey('visibility'), isFalse);
     });
 
+    test('uploads a photo bound for a locked album as locked', () async {
+      final asset = LocalAssetStub.image1;
+      final mockEntity = MockAssetEntity();
+      final stillFile = File('/path/to/photo.jpg');
+
+      when(() => mockEntity.isLivePhoto).thenReturn(false);
+      when(() => mockStorageRepository.getAssetEntityForAsset(asset)).thenAnswer((_) async => mockEntity);
+      when(() => mockStorageRepository.isAssetAvailableLocally(asset.id)).thenAnswer((_) async => true);
+      when(() => mockStorageRepository.getFileForAsset(asset.id)).thenAnswer((_) async => stillFile);
+      when(() => mockAssetMediaRepository.getOriginalFilename(asset.id)).thenAnswer((_) async => 'photo.jpg');
+
+      final captured = captureFields();
+
+      await sut.uploadSingleAsset(asset, null, callbacks: const UploadCallbacks(), toLockedAlbum: true);
+
+      expect(captured, hasLength(1));
+      expect(captured[0]['visibility'], equals('locked'));
+    });
+
     test('corrects the extension when iOS returns a rendered file for a .dng asset', () async {
       final asset = LocalAssetStub.image1;
       final mockEntity = MockAssetEntity();

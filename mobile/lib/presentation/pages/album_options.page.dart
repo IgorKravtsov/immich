@@ -8,6 +8,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/domain/models/user.model.dart';
+import 'package:immich_mobile/domain/services/remote_album.service.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/theme_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
@@ -35,6 +36,7 @@ class AlbumOptionsPage extends HookConsumerWidget {
     final userId = ref.watch(authProvider).userId;
     final activityEnabled = useState(album.isActivityEnabled);
     final isOwner = album.ownerId == userId;
+    final lockedAlbumsSupported = ref.watch(lockedAlbumsSupportedProvider);
     final owner = isOwner ? ref.watch(currentUserProvider) : null;
     final allUsers = isOwner ? null : ref.watch(usersProvider);
 
@@ -137,12 +139,18 @@ class AlbumOptionsPage extends HookConsumerWidget {
           unawaited(ref.read(authProvider.notifier).lockPinCode());
         }
         unawaited(context.navigateTo(const AlbumsRoute()));
-      } catch (_) {
+      } catch (error) {
         if (!context.mounted) {
           return;
         }
 
-        ImmichToast.show(context: context, msg: context.t.locked_album_update_failed, toastType: ToastType.error);
+        ImmichToast.show(
+          context: context,
+          msg: error is LockedAlbumStateNotAppliedException
+              ? context.t.locked_album_not_applied
+              : context.t.locked_album_update_failed,
+          toastType: ToastType.error,
+        );
       }
     }
 
@@ -279,7 +287,7 @@ class AlbumOptionsPage extends HookConsumerWidget {
                   style: context.textTheme.labelLarge?.copyWith(color: context.colorScheme.onSurfaceSecondary),
                 ),
               ),
-            if (isOwner)
+            if (isOwner && lockedAlbumsSupported)
               ListTile(
                 leading: Icon(album.isLocked ? Icons.lock_open_rounded : Icons.lock_rounded),
                 title: Text(

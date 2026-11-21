@@ -117,6 +117,23 @@ void main() {
       expect({for (final row in rows) row.id: row.unsupported}, {'renamed': false, 'unreported': true});
     });
   });
+
+  group('getThumbnail', () {
+    test('skips the newest photo when its own remote copy is locked', () async {
+      final user = await ctx.newUser();
+      await ctx.newAuthUser(id: user.id);
+      final album = await ctx.newLocalAlbum();
+      final older = await ctx.newLocalAsset(checksum: 'older', createdAt: DateTime(2024));
+      final newest = await ctx.newLocalAsset(checksum: 'newest', createdAt: DateTime(2025));
+      await ctx.newLocalAlbumAsset(albumId: album.id, assetId: older.id);
+      await ctx.newLocalAlbumAsset(albumId: album.id, assetId: newest.id);
+      await ctx.newRemoteAsset(ownerId: user.id, checksum: 'newest', visibility: .locked);
+
+      final thumbnail = await sut.getThumbnail(album.id);
+
+      expect(thumbnail?.id, older.id);
+    });
+  });
 }
 
 LocalAsset _localAsset(String id, {DateTime? updatedAt, DateTime? adjustmentTime}) => LocalAsset(

@@ -442,12 +442,26 @@ class LocalAlbumRepository extends DatabaseAccessor<Drift> with $LocalAlbumRepos
     });
   }
 
+  Expression<bool> _hasNoLockedRemoteCopy() => notExistsQuery(
+    _db.remoteAssetEntity.selectOnly()
+      ..addColumns([_db.remoteAssetEntity.id])
+      ..where(
+        _db.remoteAssetEntity.checksum.equalsExp(_db.localAssetEntity.checksum) &
+            _db.remoteAssetEntity.visibility.equalsValue(AssetVisibility.locked) &
+            _db.remoteAssetEntity.ownerId.isInQuery(
+              _db.selectOnly(_db.authUserEntity)
+                ..addColumns([_db.authUserEntity.id])
+                ..limit(1),
+            ),
+      ),
+  );
+
   Future<LocalAsset?> getThumbnail(String albumId) async {
     final query =
         _db.localAlbumAssetEntity.select().join([
             innerJoin(_db.localAssetEntity, _db.localAlbumAssetEntity.assetId.equalsExp(_db.localAssetEntity.id)),
           ])
-          ..where(_db.localAlbumAssetEntity.albumId.equals(albumId))
+          ..where(_db.localAlbumAssetEntity.albumId.equals(albumId) & _hasNoLockedRemoteCopy())
           ..orderBy([OrderingTerm.desc(_db.localAssetEntity.createdAt)])
           ..limit(1);
 

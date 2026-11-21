@@ -1,8 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:immich_mobile/constants/enums.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
+import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/infrastructure/repositories/remote_album.repository.dart';
 
+import '../../unit/factories/local_asset_factory.dart';
+import '../../unit/factories/remote_album_factory.dart';
 import '../repository_context.dart';
 
 void main() {
@@ -107,6 +110,173 @@ void main() {
       await sut.addUsers(album.id, [partner.id], role: .viewer);
 
       expect(await sut.getUserRole(album.id, partner.id), AlbumUserRole.viewer);
+    });
+  });
+
+  group('lock state reconciliation', () {
+    Future<AssetVisibility> visibilityOf(String assetId) async =>
+        (await ctx.db.managers.remoteAssetEntity.filter((row) => row.id.equals(assetId)).getSingle()).visibility;
+
+    Future<Set<String>> assetIdsIn(String albumId) async =>
+        (await ctx.db.managers.remoteAlbumAssetEntity.filter((row) => row.albumId.id.equals(albumId)).get())
+            .map((row) => row.assetId)
+            .toSet();
+
+    test('locking an album locks own assets, drops them from regular albums and removes foreign assets', () async {
+      final user = await ctx.newUser();
+      final other = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id);
+      final regular = await ctx.newRemoteAlbum(ownerId: user.id);
+      final otherLocked = await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+      final own = await ctx.newRemoteAsset(ownerId: user.id);
+      final foreign = await ctx.newRemoteAsset(ownerId: other.id);
+      final unrelated = await ctx.newRemoteAsset(ownerId: user.id);
+      final ownLocked = await ctx.newRemoteAsset(ownerId: user.id, visibility: .locked);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: own.id);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: foreign.id);
+      await ctx.newRemoteAlbumAsset(albumId: regular.id, assetId: own.id);
+      await ctx.newRemoteAlbumAsset(albumId: regular.id, assetId: foreign.id);
+      await ctx.newRemoteAlbumAsset(albumId: regular.id, assetId: unrelated.id);
+      await ctx.newRemoteAlbumAsset(albumId: otherLocked.id, assetId: ownLocked.id);
+
+      final existing = (await sut.get(album.id))!;
+      await sut.applyLockState(existing.copyWith(isLocked: true));
+
+      expect((await sut.get(album.id))?.isLocked, isTrue);
+      expect(await assetIdsIn(album.id), {own.id});
+      expect(await assetIdsIn(regular.id), {foreign.id, unrelated.id});
+      expect(await assetIdsIn(otherLocked.id), {ownLocked.id});
+      expect(await visibilityOf(own.id), AssetVisibility.locked);
+      expect(await visibilityOf(foreign.id), AssetVisibility.timeline);
+      expect(await visibilityOf(unrelated.id), AssetVisibility.timeline);
+    });
+
+    test('unlocking an album follows D4', () async {
+      final user = await ctx.newUser();
+      final other = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+      final anotherLocked = await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+      final onlyHere = await ctx.newRemoteAsset(ownerId: user.id, visibility: .locked);
+      final alsoElsewhere = await ctx.newRemoteAsset(ownerId: user.id, visibility: .locked);
+      final foreign = await ctx.newRemoteAsset(ownerId: other.id, visibility: .locked);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: onlyHere.id);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: alsoElsewhere.id);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: foreign.id);
+      await ctx.newRemoteAlbumAsset(albumId: anotherLocked.id, assetId: alsoElsewhere.id);
+
+      final existing = (await sut.get(album.id))!;
+      await sut.applyLockState(existing.copyWith(isLocked: false));
+
+      expect((await sut.get(album.id))?.isLocked, isFalse);
+      expect(await assetIdsIn(album.id), {onlyHere.id});
+      expect(await assetIdsIn(anotherLocked.id), {alsoElsewhere.id});
+      expect(await visibilityOf(onlyHere.id), AssetVisibility.timeline);
+      expect(await visibilityOf(alsoElsewhere.id), AssetVisibility.locked);
+      expect(await visibilityOf(foreign.id), AssetVisibility.locked);
+    });
+
+    test('adding assets to a locked album locks them and drops them from regular albums', () async {
+      final user = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+      final regular = await ctx.newRemoteAlbum(ownerId: user.id);
+      final asset = await ctx.newRemoteAsset(ownerId: user.id);
+      await ctx.newRemoteAlbumAsset(albumId: regular.id, assetId: asset.id);
+
+      await sut.addAssets(album.id, [asset.id]);
+
+      expect(await assetIdsIn(album.id), {asset.id});
+      expect(await assetIdsIn(regular.id), isEmpty);
+      expect(await visibilityOf(asset.id), AssetVisibility.locked);
+    });
+
+    test('adding assets to a regular album keeps their visibility', () async {
+      final user = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id);
+      final other = await ctx.newRemoteAlbum(ownerId: user.id);
+      final asset = await ctx.newRemoteAsset(ownerId: user.id);
+      await ctx.newRemoteAlbumAsset(albumId: other.id, assetId: asset.id);
+
+      await sut.addAssets(album.id, [asset.id]);
+
+      expect(await assetIdsIn(other.id), {asset.id});
+      expect(await visibilityOf(asset.id), AssetVisibility.timeline);
+    });
+
+    test('creating a locked album locks its assets', () async {
+      final user = await ctx.newUser();
+      final regular = await ctx.newRemoteAlbum(ownerId: user.id);
+      final asset = await ctx.newRemoteAsset(ownerId: user.id);
+      await ctx.newRemoteAlbumAsset(albumId: regular.id, assetId: asset.id);
+      final album = RemoteAlbumFactory.create(ownerId: user.id).copyWith(isLocked: true);
+
+      await sut.create(album, [asset.id]);
+
+      expect(await assetIdsIn(album.id), {asset.id});
+      expect(await assetIdsIn(regular.id), isEmpty);
+      expect(await visibilityOf(asset.id), AssetVisibility.locked);
+    });
+
+    test('upsertRemoteAssetStub stores the requested visibility', () async {
+      final user = await ctx.newUser();
+
+      await sut.upsertRemoteAssetStub(
+        remoteId: 'stub',
+        ownerId: user.id,
+        source: LocalAssetFactory.create(id: 'local'),
+        visibility: AssetVisibility.locked,
+      );
+
+      expect(await visibilityOf('stub'), AssetVisibility.locked);
+    });
+
+    test('isLocked reports the album flag', () async {
+      final user = await ctx.newUser();
+      final locked = await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+      final regular = await ctx.newRemoteAlbum(ownerId: user.id);
+
+      expect(await sut.isLocked(locked.id), isTrue);
+      expect(await sut.isLocked(regular.id), isFalse);
+      expect(await sut.isLocked('missing'), isFalse);
+    });
+  });
+
+  group('locked assets in regular albums', () {
+    Future<String> seedRegularAlbumWithLockedAsset() async {
+      final user = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id);
+      final visible = await ctx.newRemoteAsset(ownerId: user.id);
+      final locked = await ctx.newRemoteAsset(ownerId: user.id, visibility: .locked);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: visible.id);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: locked.id);
+      return album.id;
+    }
+
+    test('are left out of getAll counts', () async {
+      final albumId = await seedRegularAlbumWithLockedAsset();
+
+      expect((await sut.getAll()).singleWhere((album) => album.id == albumId).assetCount, 1);
+    });
+
+    test('are left out of get counts', () async {
+      final albumId = await seedRegularAlbumWithLockedAsset();
+
+      expect((await sut.get(albumId))?.assetCount, 1);
+    });
+
+    test('are left out of getAlbumsContainingAsset counts', () async {
+      final albumId = await seedRegularAlbumWithLockedAsset();
+      final visibleId = (await sut.getAssets(albumId)).firstWhere((asset) => !asset.isLocked).id;
+
+      expect((await sut.getAlbumsContainingAsset(visibleId)).single.assetCount, 1);
+    });
+
+    test('still count inside locked albums', () async {
+      final user = await ctx.newUser();
+      final album = await ctx.newRemoteAlbum(ownerId: user.id, isLocked: true);
+      final locked = await ctx.newRemoteAsset(ownerId: user.id, visibility: .locked);
+      await ctx.newRemoteAlbumAsset(albumId: album.id, assetId: locked.id);
+
+      expect((await sut.getAll(isLocked: true)).single.assetCount, 1);
     });
   });
 

@@ -310,5 +310,34 @@ void main() {
       expect(buckets, hasLength(1));
       expect(buckets.single.assetCount, 1);
     });
+
+    test('hides a local photo whose own remote copy is locked', () async {
+      final album = await ctx.newLocalAlbum();
+      final visible = await ctx.newLocalAsset(checksum: 'visible');
+      final hidden = await ctx.newLocalAsset(checksum: 'hidden');
+      await ctx.newLocalAlbumAsset(albumId: album.id, assetId: visible.id);
+      await ctx.newLocalAlbumAsset(albumId: album.id, assetId: hidden.id);
+      await ctx.newRemoteAsset(ownerId: userId, checksum: 'hidden', visibility: .locked);
+
+      for (final groupBy in [GroupAssetsBy.day, GroupAssetsBy.none]) {
+        final query = sut.localAlbum(album.id, groupBy);
+        final assets = await query.assetSource(0, 10);
+        expect(assets.map((asset) => (asset as LocalAsset).id), [visible.id]);
+        final buckets = await query.bucketSource().first;
+        expect(buckets.fold<int>(0, (sum, bucket) => sum + bucket.assetCount), 1);
+      }
+    });
+
+    test('keeps a local photo when only a partner copy is locked', () async {
+      final album = await ctx.newLocalAlbum();
+      final local = await ctx.newLocalAsset(checksum: 'partner-locked');
+      await ctx.newLocalAlbumAsset(albumId: album.id, assetId: local.id);
+      await ctx.newRemoteAsset(ownerId: otherUserId, checksum: 'partner-locked', visibility: .locked);
+
+      final query = sut.localAlbum(album.id, .day);
+
+      expect((await query.assetSource(0, 10)).map((asset) => (asset as LocalAsset).id), [local.id]);
+      expect((await query.bucketSource().first).single.assetCount, 1);
+    });
   });
 }

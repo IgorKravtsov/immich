@@ -325,3 +325,37 @@ test('redirects a locked album to the locked folder', async ({ data, router }) =
     redirect: Route.viewAlbumAsset({ albumId: album.id, assetId: 'asset-id', isLocked: true }) + '?at=x',
   });
 });
+
+const runLoad = (albumId: string, url: string) =>
+  load({ url: new URL(url, location.origin), params: { albumId } } as never).catch((error: unknown) =>
+    isRedirect(error) ? { redirect: error.location } : Promise.reject(error),
+  );
+
+const forbidAlbum = { status: 400, json: { message: 'Not found or no album.read access', statusCode: 400 } };
+
+test('redirects an unreadable album to the locked folder when the session is not elevated', async ({
+  data,
+  api,
+  router,
+}) => {
+  data.setAuthStatus({ pinCode: true, isElevated: false });
+  api.on({ getAlbumInfo: () => forbidAlbum });
+  await router.goto(Route.viewAlbum({ id: 'locked-album-id' }), { albumId: 'locked-album-id' });
+
+  const result = await runLoad(
+    'locked-album-id',
+    Route.viewAlbumAsset({ albumId: 'locked-album-id', assetId: 'asset-id' }) + '?at=x',
+  );
+
+  expect(result).toEqual({
+    redirect: Route.viewAlbumAsset({ albumId: 'locked-album-id', assetId: 'asset-id', isLocked: true }) + '?at=x',
+  });
+});
+
+test('reports an unreadable album when the session is already elevated', async ({ data, api, router }) => {
+  data.setAuthStatus({ pinCode: true, isElevated: true });
+  api.on({ getAlbumInfo: () => forbidAlbum });
+  await router.goto(Route.viewAlbum({ id: 'missing-album-id' }), { albumId: 'missing-album-id' });
+
+  await expect(runLoad('missing-album-id', Route.viewAlbum({ id: 'missing-album-id' }))).rejects.toThrow();
+});

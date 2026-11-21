@@ -22,6 +22,16 @@ class AlbumAssetCandidates {
   const AlbumAssetCandidates({required this.remoteAssetIds, required this.localAssetsToUpload});
 }
 
+class LockedAlbumStateNotAppliedException implements Exception {
+  final String albumId;
+  final bool requested;
+
+  const LockedAlbumStateNotAppliedException(this.albumId, {required this.requested});
+
+  @override
+  String toString() => 'LockedAlbumStateNotAppliedException(albumId: $albumId, requested: $requested)';
+}
+
 class RemoteAlbumService {
   static final _logger = Logger('RemoteAlbumService');
 
@@ -137,9 +147,22 @@ class RemoteAlbumService {
       assetIds: assetIds,
       isLocked: isLocked,
     );
+    if (album.isLocked != isLocked) {
+      await _discardUnappliedLockedAlbum(album);
+      throw LockedAlbumStateNotAppliedException(album.id, requested: isLocked);
+    }
     await _repository.create(album, assetIds);
 
     return album;
+  }
+
+  Future<void> _discardUnappliedLockedAlbum(RemoteAlbum album) async {
+    try {
+      await _albumApiRepository.deleteAlbum(album.id);
+    } catch (error, stack) {
+      _logger.warning('Failed to discard album ${album.id} created without the locked state', error, stack);
+      await _repository.create(album, const []);
+    }
   }
 
   Future<RemoteAlbum> updateAlbum(
@@ -229,6 +252,7 @@ class RemoteAlbumService {
   ) async {
     int addedCount = 0;
     final pendingAdds = <Future<void>>[];
+    final isLockedAlbum = await _repository.isLocked(albumId);
     final localById = {for (final a in localAssets) a.id: a};
 
     final wrappedCallbacks = UploadCallbacks(
@@ -255,7 +279,7 @@ class RemoteAlbumService {
           return;
         }
         pendingAdds.add(
-          linkUploadedAssetToAlbum(albumId, remoteId, uploader, source)
+          linkUploadedAssetToAlbum(albumId, remoteId, uploader, source, isLockedAlbum: isLockedAlbum)
               .then<void>((added) {
                 addedCount += added;
               })
@@ -266,7 +290,12 @@ class RemoteAlbumService {
       },
     );
 
-    await _uploadService.uploadManual(localAssets, callbacks: wrappedCallbacks, cancelToken: cancelToken);
+    await _uploadService.uploadManual(
+      localAssets,
+      callbacks: wrappedCallbacks,
+      cancelToken: cancelToken,
+      toLockedAlbum: isLockedAlbum,
+    );
     await Future.wait(pendingAdds);
     return addedCount;
   }
@@ -285,13 +314,25 @@ class RemoteAlbumService {
   /// `remote_asset_entity` row from the local source so the FK-protected
   /// junction insert succeeds. Sync overwrites the placeholder later with
   /// the authoritative server data.
-  Future<int> linkUploadedAssetToAlbum(String albumId, String remoteId, UserDto uploader, LocalAsset source) async {
+  Future<int> linkUploadedAssetToAlbum(
+    String albumId,
+    String remoteId,
+    UserDto uploader,
+    LocalAsset source, {
+    bool? isLockedAlbum,
+  }) async {
     final result = await _albumApiRepository.addAssets(albumId, [remoteId]);
     if (result.added.isEmpty) {
       return 0;
     }
 
-    await _repository.upsertRemoteAssetStub(remoteId: remoteId, ownerId: uploader.id, source: source);
+    final lockedDestination = isLockedAlbum ?? await _repository.isLocked(albumId);
+    await _repository.upsertRemoteAssetStub(
+      remoteId: remoteId,
+      ownerId: uploader.id,
+      source: source,
+      visibility: lockedDestination ? AssetVisibility.locked : AssetVisibility.timeline,
+    );
     await _repository.addAssets(albumId, result.added);
     return result.added.length;
   }
@@ -312,8 +353,16 @@ class RemoteAlbumService {
     return _repository.addUsers(albumId, userIds, role: role);
   }
 
-  Future<RemoteAlbum> setLocked(String albumId, {required bool isLocked}) {
-    return updateAlbum(albumId, isLocked: isLocked);
+  Future<RemoteAlbum> setLocked(String albumId, {required bool isLocked}) async {
+    final owner = await _repository.getOwner(albumId);
+    final updatedAlbum = await _albumApiRepository.updateAlbum(albumId, owner, isLocked: isLocked);
+    if (updatedAlbum.isLocked != isLocked) {
+      await _repository.updateAlbum(updatedAlbum);
+      throw LockedAlbumStateNotAppliedException(albumId, requested: isLocked);
+    }
+
+    await _repository.applyLockState(updatedAlbum);
+    return updatedAlbum;
   }
 
   Future<void> removeUser(String albumId, {required String userId}) async {

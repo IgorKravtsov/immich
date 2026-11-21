@@ -1361,6 +1361,7 @@
   "locked_album": "Locked album",
   "locked_album_lock_confirmation": "The album and your photos in it move to your Locked Folder and are removed from your other albums. Photos added by other people are removed from the album. The album is only visible behind your PIN code.",
   "locked_album_moved": "Album moved to the Locked Folder",
+  "locked_album_not_applied": "The server did not apply the Locked Folder change. Update the server and try again.",
   "locked_album_partners_description": "Selected partners can view this album in their own Locked Folder",
   "locked_album_removed": "Album removed from the Locked Folder",
   "locked_album_sharing_notice": "This album is in the locked folder. People you share it with will only see it in their own locked folder, after entering their PIN code. Shared links require a password.",

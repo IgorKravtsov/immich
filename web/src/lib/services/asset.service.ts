@@ -148,18 +148,21 @@ export const getAssetBulkActions = ($t: MessageFormatter, album?: AlbumResponseD
   const RefreshFacesJob: ActionItem = {
     title: $t('refresh_faces'),
     icon: mdiHeadSyncOutline,
+    $if: () => ownedAssets.length > 0,
     onAction: () => onAction(AssetJobName.RefreshFaces),
   };
 
   const RefreshMetadataJob: ActionItem = {
     title: $t('refresh_metadata'),
     icon: mdiDatabaseRefreshOutline,
+    $if: () => ownedAssets.length > 0,
     onAction: () => onAction(AssetJobName.RefreshMetadata),
   };
 
   const RegenerateThumbnailJob: ActionItem = {
     title: $t('refresh_thumbnails'),
     icon: mdiImageRefreshOutline,
+    $if: () => ownedAssets.length > 0,
     onAction: () => onAction(AssetJobName.RegenerateThumbnail),
   };
 
@@ -167,7 +170,7 @@ export const getAssetBulkActions = ($t: MessageFormatter, album?: AlbumResponseD
     title: $t('refresh_encoded_videos'),
     icon: mdiCogRefreshOutline,
     onAction: () => onAction(AssetJobName.TranscodeVideo),
-    $if: () => ownedAssets.every((asset) => asset.isVideo),
+    $if: () => ownedAssets.length > 0 && ownedAssets.every((asset) => asset.isVideo),
   };
 
   return {
@@ -337,7 +340,7 @@ export const getAssetActions = (
   const Tag: ActionItem = {
     title: $t('add_tag'),
     icon: mdiTagPlusOutline,
-    $if: () => authManager.authenticated && authManager.preferences.tags.enabled,
+    $if: () => isOwner && authManager.preferences.tags.enabled,
     onAction: () => modalManager.show(AssetTagModal, { assetIds: [asset.id] }),
     shortcuts: { key: 't' },
   };
@@ -391,18 +394,21 @@ export const getAssetActions = (
   const RefreshFacesJob: ActionItem = {
     title: $t('refresh_faces'),
     icon: mdiHeadSyncOutline,
+    $if: () => isOwner,
     onAction: () => handleRunAssetJob({ name: AssetJobName.RefreshFaces, assetIds: [asset.id] }),
   };
 
   const RefreshMetadataJob: ActionItem = {
     title: $t('refresh_metadata'),
     icon: mdiDatabaseRefreshOutline,
+    $if: () => isOwner,
     onAction: () => handleRunAssetJob({ name: AssetJobName.RefreshMetadata, assetIds: [asset.id] }),
   };
 
   const RegenerateThumbnailJob: ActionItem = {
     title: $t('refresh_thumbnails'),
     icon: mdiImageRefreshOutline,
+    $if: () => isOwner,
     onAction: () => handleRunAssetJob({ name: AssetJobName.RegenerateThumbnail, assetIds: [asset.id] }),
   };
 
@@ -410,7 +416,7 @@ export const getAssetActions = (
     title: $t('refresh_encoded_videos'),
     icon: mdiCogRefreshOutline,
     onAction: () => handleRunAssetJob({ name: AssetJobName.TranscodeVideo, assetIds: [asset.id] }),
-    $if: () => asset.type === AssetTypeEnum.Video,
+    $if: () => isOwner && asset.type === AssetTypeEnum.Video,
   };
 
   return {

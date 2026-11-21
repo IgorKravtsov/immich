@@ -144,6 +144,7 @@ class ForegroundUploadService {
     List<LocalAsset> localAssets, {
     Completer<void>? cancelToken,
     UploadCallbacks callbacks = const UploadCallbacks(),
+    bool toLockedAlbum = false,
   }) async {
     if (localAssets.isEmpty) {
       return;
@@ -152,7 +153,7 @@ class ForegroundUploadService {
     await _executeWithWorkerPool<LocalAsset>(
       items: localAssets,
       cancelToken: cancelToken,
-      processItem: (asset) => uploadSingleAsset(asset, cancelToken, callbacks: callbacks),
+      processItem: (asset) => uploadSingleAsset(asset, cancelToken, callbacks: callbacks, toLockedAlbum: toLockedAlbum),
     );
   }
 
@@ -248,6 +249,7 @@ class ForegroundUploadService {
     LocalAsset asset,
     Completer<void>? cancelToken, {
     required UploadCallbacks callbacks,
+    bool toLockedAlbum = false,
   }) async {
     final t = StaticTranslations.instance;
     final assetNotFoundOnDevice = CurrentPlatform.isAndroid
@@ -370,7 +372,7 @@ class ForegroundUploadService {
 
       final visibility = backupUploadVisibility(
         isLivePhotoMotion: false,
-        isInLockedAlbum: await _backupRepository.isInLockedAlbum(asset.id),
+        isInLockedAlbum: toLockedAlbum || await _backupRepository.isInLockedAlbum(asset.id),
       );
       if (visibility != null) {
         fields['visibility'] = visibility.name;

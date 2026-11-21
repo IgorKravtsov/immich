@@ -104,12 +104,38 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
     origin: TimelineOrigin.localAlbum,
   );
 
+  Expression<bool> _hasNoLockedRemoteCopy() {
+    final lockedCopy = _db.alias(_db.remoteAssetEntity, 'locked_copy');
+    return notExistsQuery(
+      lockedCopy.selectOnly()
+        ..addColumns([lockedCopy.id])
+        ..where(
+          lockedCopy.checksum.equalsExp(_db.localAssetEntity.checksum) &
+              lockedCopy.visibility.equalsValue(AssetVisibility.locked) &
+              lockedCopy.ownerId.isInQuery(
+                _db.selectOnly(_db.authUserEntity)
+                  ..addColumns([_db.authUserEntity.id])
+                  ..limit(1),
+              ),
+        ),
+    );
+  }
+
   Stream<List<Bucket>> _watchLocalAlbumBucket(String albumId, {GroupAssetsBy groupBy = GroupAssetsBy.day}) {
     if (groupBy == GroupAssetsBy.none) {
-      return _db.localAlbumAssetEntity
-          .count(where: (row) => row.albumId.equals(albumId))
-          .map(_generateBuckets)
-          .watchSingle();
+      final assetCount = _db.localAlbumAssetEntity.assetId.count();
+      final query = _db.localAlbumAssetEntity.selectOnly()
+        ..addColumns([assetCount])
+        ..join([
+          innerJoin(
+            _db.localAssetEntity,
+            _db.localAssetEntity.id.equalsExp(_db.localAlbumAssetEntity.assetId),
+            useColumns: false,
+          ),
+        ])
+        ..where(_db.localAlbumAssetEntity.albumId.equals(albumId) & _hasNoLockedRemoteCopy());
+
+      return query.map((row) => _generateBuckets(row.read(assetCount) ?? 0)).watchSingle();
     }
 
     final assetCountExp = _db.localAssetEntity.id.count();
@@ -124,7 +150,7 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
             ),
           ])
           ..addColumns([assetCountExp, dateExp])
-          ..where(_db.localAlbumAssetEntity.albumId.equals(albumId))
+          ..where(_db.localAlbumAssetEntity.albumId.equals(albumId) & _hasNoLockedRemoteCopy())
           ..groupBy([dateExp])
           ..orderBy([OrderingTerm.desc(dateExp)]);
 
@@ -155,7 +181,7 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
             ),
           ])
           ..addColumns([_db.remoteAssetEntity.id])
-          ..where(_db.localAlbumAssetEntity.albumId.equals(albumId))
+          ..where(_db.localAlbumAssetEntity.albumId.equals(albumId) & _hasNoLockedRemoteCopy())
           ..orderBy([OrderingTerm.desc(_db.localAssetEntity.createdAt)])
           ..limit(count, offset: offset);
 
