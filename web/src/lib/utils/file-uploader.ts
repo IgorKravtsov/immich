@@ -24,7 +24,7 @@ import { handleError } from './handle-error';
 export const uploadExecutionQueue = new ExecutorQueue({ concurrency: 2 });
 
 type FilePickerParam = { multiple?: boolean; extensions?: string[] };
-type FileUploadParam = { multiple?: boolean; albumId?: string };
+type FileUploadParam = { multiple?: boolean; albumId?: string; isLockedAssets?: boolean };
 
 export const openFilePicker = async (options: FilePickerParam = {}) => {
   const { multiple = true, extensions } = options;
@@ -70,14 +70,14 @@ export const openFilePicker = async (options: FilePickerParam = {}) => {
 };
 
 export const openFileUploadDialog = async (options: FileUploadParam = {}) => {
-  const { albumId, multiple = true } = options;
+  const { albumId, multiple = true, isLockedAssets } = options;
   const extensions = uploadManager.getExtensions();
   const files = await openFilePicker({
     multiple,
     extensions,
   });
 
-  return fileUploadHandler({ files, albumId });
+  return fileUploadHandler({ files, albumId, isLockedAssets });
 };
 
 type FileUploadHandlerParams = Omit<FileUploaderParams, 'deviceAssetId' | 'assetFile'> & {

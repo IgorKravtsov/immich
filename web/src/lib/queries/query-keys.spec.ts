@@ -6,6 +6,7 @@ import {
   getAlbumStatisticsQuery,
   getAlbumsByAssetQuery,
   getAllAlbumsQuery,
+  getLockedAlbumsQuery,
   getRecentAlbumsQuery,
 } from '#lib/queries/album.query.ts';
 import { getApiKeysQuery } from '#lib/queries/api-key.query.ts';
@@ -33,7 +34,7 @@ import { detectPriorInstallQuery, getMaintenanceStatusQuery } from '#lib/queries
 import { getMapMarkersQuery } from '#lib/queries/map.query.ts';
 import { memoriesStatisticsQuery, searchMemoriesQuery } from '#lib/queries/memory.query.ts';
 import { getNotificationsQuery } from '#lib/queries/notification.query.ts';
-import { getPartnersQuery } from '#lib/queries/partner.query.ts';
+import { getPartnerLockedAssetsQuery, getPartnersQuery } from '#lib/queries/partner.query.ts';
 import { searchPasskeysQuery } from '#lib/queries/passkey.query.ts';
 import {
   getAllPeoplePagesQuery,
@@ -122,6 +123,7 @@ const queries: Record<string, QueryFactory> = {
   getActivityStatisticsQuery: () => getActivityStatisticsQuery({ albumId: id }),
   getAllAlbumsQuery: () => getAllAlbumsQuery({ isOwned: true }),
   getRecentAlbumsQuery: () => getRecentAlbumsQuery(),
+  getLockedAlbumsQuery: () => getLockedAlbumsQuery(),
   getAlbumQuery: () => getAlbumQuery(id),
   getAlbumsByAssetQuery: () => getAlbumsByAssetQuery('asset-id'),
   getAlbumStatisticsQuery: () => getAlbumStatisticsQuery(),
@@ -154,6 +156,7 @@ const queries: Record<string, QueryFactory> = {
   getMapMarkersQuery: () => getMapMarkersQuery({ isFavorite: true }),
   getNotificationsQuery: () => getNotificationsQuery(),
   getPartnersQuery: () => getPartnersQuery(PartnerDirection.SharedBy),
+  getPartnerLockedAssetsQuery: () => getPartnerLockedAssetsQuery(id),
   searchPasskeysQuery: () => searchPasskeysQuery(),
   getAllPeopleQuery: () => getAllPeopleQuery({ withHidden: true }),
   getAllPeoplePagesQuery: () => getAllPeoplePagesQuery({ withHidden: true }),

@@ -218,6 +218,7 @@ const album = ({
     updatedAt: createdAt,
     hasSharedLink: false,
     isActivityEnabled: true,
+    isLocked: false,
     shared: members.length > 1,
     order: AssetOrder.Desc,
     ...overrides,

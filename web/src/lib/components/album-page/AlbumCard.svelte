@@ -3,7 +3,8 @@
   import { authManager } from '#lib/managers/auth-manager.svelte.ts';
   import { getShortDateRange } from '#lib/utils/date-time.ts';
   import { type AlbumResponseDto } from '@immich/sdk';
-  import { ContextMenuButton, type MenuItems } from '@immich/ui';
+  import { ContextMenuButton, Icon, type MenuItems } from '@immich/ui';
+  import { mdiLock } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   type Props = {
@@ -55,6 +56,14 @@
       data-testid="album-name"
       title={album.albumName}
     >
+      {#if album.isLocked}
+        <Icon
+          icon={mdiLock}
+          size="18"
+          class="inline-block align-text-top text-primary"
+          aria-label={$t('locked_album')}
+        />
+      {/if}
       {album.albumName}
     </p>
 

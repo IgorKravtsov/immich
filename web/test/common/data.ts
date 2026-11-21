@@ -3,6 +3,7 @@ import { SeededRandom } from '#test/common/helpers.ts';
 import { payload } from '#test/common/payloads.ts';
 import type { Call, ResponseOf } from '#test/common/types.ts';
 import {
+  AlbumUserRole,
   AssetOrder,
   AssetTypeEnum,
   AssetVisibility,
@@ -17,6 +18,7 @@ import {
   SharingDirection,
   type ActivityCreateDto,
   type ActivityResponseDto,
+  type AddUsersDto,
   type AdminConfigDto,
   type AlbumResponseDto,
   type ApiKeyResponseDto,
@@ -183,6 +185,7 @@ export class MockData {
   private readonly assets = new Map<string, AssetResponseDto>();
   private readonly albums = new Map<string, AlbumResponseDto>();
   private readonly albumAssets = new Map<string, Set<string>>();
+  private readonly partnerLockedAssets = new Map<string, Set<string>>();
   private readonly memories = new Map<string, MemoryResponseDto>();
   private readonly people = new Map<string, PersonResponseDto>();
   private personUsers: PersonUser[] = [];
@@ -776,7 +779,11 @@ export class MockData {
   }
 
   createAlbum(dto: CreateAlbumDto) {
-    const album = factory.album({ albumName: dto.albumName, description: dto.description ?? '' });
+    const album = factory.album({
+      albumName: dto.albumName,
+      description: dto.description ?? '',
+      isLocked: dto.isLocked ?? false,
+    });
     this.addAlbums(album).addToAlbum(
       album.id,
       (dto.assetIds ?? []).map((id) => ({ id })),
@@ -796,6 +803,44 @@ export class MockData {
     this.albums.delete(id);
     this.albumAssets.delete(id);
     return this;
+  }
+
+  addUsersToAlbum(albumId: string, albumUsers: AddUsersDto['albumUsers']) {
+    const album = this.albums.get(albumId);
+    if (!album) {
+      return;
+    }
+
+    const added = albumUsers
+      .map(({ userId, role }) => ({ user: this.users.get(userId) ?? this.partnerUser(userId), role }))
+      .filter((albumUser) => albumUser.user !== undefined)
+      .map(({ user, role }) => ({ user: user!, role: role ?? AlbumUserRole.Editor }));
+    this.albums.set(albumId, { ...album, albumUsers: [...album.albumUsers, ...added], shared: true });
+    return this.getAlbum(albumId);
+  }
+
+  private partnerUser(userId: string) {
+    return Object.values(this.partners)
+      .flatMap((partners) => [...partners.values()])
+      .find(({ id }) => id === userId);
+  }
+
+  getPartnerLockedAssets(partnerId: string) {
+    return [...(this.partnerLockedAssets.get(partnerId) ?? [])];
+  }
+
+  addPartnerLockedAssets(partnerId: string, assetIds: string[]) {
+    const assets = this.partnerLockedAssets.get(partnerId) ?? new Set();
+    for (const assetId of assetIds) {
+      assets.add(assetId);
+    }
+    this.partnerLockedAssets.set(partnerId, assets);
+  }
+
+  removePartnerLockedAssets(partnerId: string, assetIds: string[]) {
+    for (const assetId of assetIds) {
+      this.partnerLockedAssets.get(partnerId)?.delete(assetId);
+    }
   }
 
   removeUserFromAlbum(albumId: string, userId: string) {
@@ -1336,8 +1381,9 @@ export class MockData {
       }));
   }
 
-  albumList(assetId?: string) {
+  albumList({ assetId, isLocked = false }: { assetId?: string; isLocked?: boolean } = {}) {
     return [...this.albums.keys()]
+      .filter((albumId) => this.albums.get(albumId)?.isLocked === isLocked)
       .filter((albumId) => assetId === undefined || this.albumAssets.get(albumId)?.has(assetId))
       .map((albumId) => this.getAlbum(albumId)!);
   }

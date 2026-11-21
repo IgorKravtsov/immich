@@ -170,6 +170,11 @@ export const createApp = () => {
         },
       },
     },
+    lockedFolder: {
+      tab: (name: string) =>
+        page.getByRole('navigation', { name: 'locked_folder' }).getByRole('link', { name, exact: true }),
+      createAlbumButton: button('create_locked_album'),
+    },
     albums: {
       createAlbumButton: button('create_album'),
       card: (name: string) => main.getByTestId('album-card').filter({ has: page.getByTitle(name, { exact: true }) }),
@@ -178,6 +183,9 @@ export const createApp = () => {
       optionsMenuButton: button('album_options'),
       deleteMenuItem: page.getByRole('menuitem', { name: 'delete_album', exact: true }),
       leaveMenuItem: page.getByRole('menuitem', { name: 'leave_album', exact: true }),
+      lockMenuItem: page.getByRole('menuitem', { name: 'move_to_locked_folder', exact: true }),
+      unlockMenuItem: page.getByRole('menuitem', { name: 'remove_from_locked_folder', exact: true }),
+      lockedIndicator: page.getByTestId('locked-album-indicator'),
       descriptionInput: page.getByTestId('autogrow-textarea'),
       titleInput: page.getByTitle('edit_title', { exact: true }),
       commentsButton: button('activity'),
@@ -191,6 +199,7 @@ export const createApp = () => {
       },
     },
     confirmButton: page.getByRole('dialog').getByRole('button', { name: 'confirm', exact: true }),
+    pinCodeDialog: page.getByRole('dialog').filter({ hasText: 'enter_your_pin_code_subtitle' }),
     toast: (text: string | RegExp) => page.getByText(text, { exact: true }),
     dialogButton: (name: string) => page.getByRole('dialog').getByRole('button', { name, exact: true }),
     cancelButton: page.getByRole('dialog').getByRole('button', { name: 'cancel', exact: true }),

@@ -2,8 +2,15 @@
   import HeaderActionButton from '#lib/components/HeaderActionButton.svelte';
   import AlbumSharedLink from '#lib/components/album-page/AlbumSharedLink.svelte';
   import UserAvatar from '#lib/components/shared-components/UserAvatar.svelte';
-  import { getAlbumQuery, updateAlbumInfoMutation } from '#lib/queries/album.query.ts';
+  import {
+    addUsersToAlbumMutation,
+    getAlbumInfoQuery,
+    getAlbumQuery,
+    removeUserFromAlbumMutation,
+    updateAlbumInfoMutation,
+  } from '#lib/queries/album.query.ts';
   import { executeMutation, queryClient } from '#lib/queries/client.ts';
+  import { getPartnersQuery } from '#lib/queries/partner.query.ts';
   import { getAllSharedLinksQuery } from '#lib/queries/shared-link.query.ts';
   import {
     getAlbumActions,
@@ -13,11 +20,27 @@
   import {
     AlbumUserRole,
     AssetOrder,
+    PartnerDirection,
     type AlbumResponseDto,
+    type PartnerResponseDto,
     type UpdateAlbumDto,
     type UserResponseDto,
   } from '@immich/sdk';
-  import { Field, HStack, Modal, ModalBody, Select, Stack, Switch, Text, type SelectOption } from '@immich/ui';
+  import {
+    Alert,
+    Checkbox,
+    Field,
+    HStack,
+    Label,
+    Modal,
+    ModalBody,
+    Select,
+    Stack,
+    Switch,
+    Text,
+    type SelectOption,
+  } from '@immich/ui';
+  import { mdiLockOutline } from '@mdi/js';
   import { createQuery } from '@tanstack/svelte-query';
   import { t } from 'svelte-i18n';
 
@@ -30,10 +53,14 @@
   let { album: initialAlbum, readOnly = false, onClose }: Props = $props();
 
   const query = createQuery(
-    () => getAlbumQuery(initialAlbum.id),
+    () => ({ ...getAlbumQuery(initialAlbum.id), enabled: !initialAlbum.isLocked }),
     () => queryClient,
   );
-  const album = $derived(query.data ?? initialAlbum);
+  const lockedQuery = createQuery(
+    () => ({ ...getAlbumInfoQuery(initialAlbum.id), enabled: initialAlbum.isLocked }),
+    () => queryClient,
+  );
+  const album = $derived((initialAlbum.isLocked ? lockedQuery.data : query.data) ?? initialAlbum);
 
   const handleRoleSelect = async (user: UserResponseDto, role: AlbumUserRole | 'none') => {
     if (role === 'none') {
@@ -54,11 +81,29 @@
     () => queryClient,
   );
   const sharedLinks = $derived(sharedLinksQuery.data ?? []);
+
+  const partnersQuery = createQuery(
+    () => ({ ...getPartnersQuery(PartnerDirection.SharedBy), enabled: album.isLocked && !readOnly }),
+    () => queryClient,
+  );
+  const partners = $derived(partnersQuery.data ?? []);
+  const albumUserIds = $derived(new Set(album.albumUsers.map(({ user }) => user.id)));
+
+  const handlePartnerToggle = (partner: PartnerResponseDto, checked: boolean) =>
+    checked
+      ? executeMutation(addUsersToAlbumMutation, [
+          { id: album.id, addUsersDto: { albumUsers: [{ userId: partner.id, role: AlbumUserRole.Viewer }] } },
+        ])
+      : executeMutation(removeUserFromAlbumMutation, [{ id: album.id, userId: partner.id }]);
 </script>
 
 <Modal title={readOnly ? $t('album') : $t('options')} {onClose} size="small">
   <ModalBody>
     <Stack gap={6}>
+      {#if album.isLocked}
+        <Alert color="primary" icon={mdiLockOutline} size="small" title={$t('locked_album_sharing_notice')} />
+      {/if}
+
       <div>
         <Text size="medium" fontWeight="semi-bold">{$t('settings')}</Text>
         <div class="mt-2 grid gap-y-3 ps-2">
@@ -115,6 +160,28 @@
           {/each}
         </div>
       </div>
+      {#if album.isLocked && !readOnly}
+        <div>
+          <Text size="medium" fontWeight="semi-bold">{$t('partners')}</Text>
+          <div class="mt-2 ps-2">
+            {#if partners.length === 0}
+              <Text size="small" color="muted">{$t('no_partners_to_share_with')}</Text>
+            {/if}
+            {#each partners as partner (partner.id)}
+              <div class="flex items-center gap-3 py-2">
+                <Checkbox
+                  id="album-partner-{partner.id}"
+                  checked={albumUserIds.has(partner.id)}
+                  onCheckedChange={(checked) => handlePartnerToggle(partner, checked)}
+                />
+                <UserAvatar user={partner} size="sm" />
+                <Label for="album-partner-{partner.id}" label={partner.name} />
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
+
       {#if !readOnly}
         <div class="mb-4">
           <HStack class="mb-2 justify-between">

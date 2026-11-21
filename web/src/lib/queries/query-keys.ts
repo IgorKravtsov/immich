@@ -57,7 +57,7 @@ export const QueryKeys = {
   adminUserStatistics: ({ id }: IdParams) => [...QueryKeys.adminUser({ id }), 'statistics'],
 
   // albums
-  albums: (...params: [{ assetId?: string }?]) => ['albums', ...params],
+  albums: (...params: [{ assetId?: string; isLocked?: boolean }?]) => ['albums', ...params],
   albumStatistics: () => [...QueryKeys.albums(), 'statistics'],
   album: ({ id }: IdParams) => [...QueryKeys.albums(), id],
   albumMapMarkers: ({ id }: IdParams) => [...QueryKeys.album({ id }), 'map-markers'],
@@ -105,6 +105,7 @@ export const QueryKeys = {
 
   // partners
   partners: (...params: [{ direction: PartnerDirection }?]) => ['partners', ...params],
+  partnerLockedAssets: ({ id }: IdParams) => [...QueryKeys.partners(), id, 'locked-assets'],
 
   // passkeys
   passkeys: () => ['passkeys'],

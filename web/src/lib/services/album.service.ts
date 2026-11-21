@@ -16,9 +16,10 @@ import { executeMutation } from '#lib/queries/client.ts';
 import { Route } from '#lib/route.ts';
 import { createAlbumAndRedirect } from '#lib/utils/album-utils.ts';
 import { downloadArchive } from '#lib/utils/asset-utils.ts';
+import { requireElevatedSession } from '#lib/utils/elevated-session.ts';
 import { openFileUploadDialog } from '#lib/utils/file-uploader.ts';
 import { getFormatter } from '#lib/utils/i18n.ts';
-import { AlbumUserRole, type AlbumResponseDto, type UserResponseDto } from '@immich/sdk';
+import { AlbumUserRole, AssetVisibility, type AlbumResponseDto, type UserResponseDto } from '@immich/sdk';
 import { modalManager, type ActionItem } from '@immich/ui';
 import {
   mdiCogOutline,
@@ -26,6 +27,8 @@ import {
   mdiExitToApp,
   mdiImageOutline,
   mdiLink,
+  mdiLockOpenVariantOutline,
+  mdiLockOutline,
   mdiPlus,
   mdiPlusBoxOutline,
   mdiRenameOutline,
@@ -52,6 +55,16 @@ export const getAlbumsActions = ($t: MessageFormatter) => {
   return { Create };
 };
 
+export const getLockedAlbumsActions = ($t: MessageFormatter) => {
+  const Create: ActionItem = {
+    title: $t('create_locked_album'),
+    icon: mdiPlusBoxOutline,
+    onAction: () => createAlbumAndRedirect({ isLocked: true }),
+  };
+
+  return { Create };
+};
+
 export const getAlbumActions = ($t: MessageFormatter, album: AlbumResponseDto) => {
   const isOwned = isAlbumOwner(album);
   const isEditor = isAlbumEditor(album);
@@ -72,7 +85,7 @@ export const getAlbumActions = ($t: MessageFormatter, album: AlbumResponseDto) =
     title: $t('create_link'),
     icon: mdiLink,
     color: 'primary',
-    onAction: () => modalManager.show(SharedLinkCreateModal, { albumId: album.id }),
+    onAction: () => modalManager.show(SharedLinkCreateModal, { albumId: album.id, requirePassword: album.isLocked }),
   };
 
   const Delete: ActionItem = {
@@ -103,6 +116,20 @@ export const getAlbumActions = ($t: MessageFormatter, album: AlbumResponseDto) =
     onAction: () => handleLeaveAlbum(album),
   };
 
+  const Lock: ActionItem = {
+    title: $t('move_to_locked_folder'),
+    icon: mdiLockOutline,
+    $if: () => isOwned && !album.isLocked,
+    onAction: () => handleLockAlbum(album),
+  };
+
+  const Unlock: ActionItem = {
+    title: $t('remove_from_locked_folder'),
+    icon: mdiLockOpenVariantOutline,
+    $if: () => isOwned && album.isLocked,
+    onAction: () => handleUnlockAlbum(album),
+  };
+
   const Options: ActionItem = {
     title: $t('options'),
     icon: mdiCogOutline,
@@ -117,7 +144,7 @@ export const getAlbumActions = ($t: MessageFormatter, album: AlbumResponseDto) =
     onAction: () => modalManager.show(AlbumOptionsModal, { album }),
   };
 
-  return { AddUsers, CreateSharedLink, Delete, Download, Edit, Leave, Options, Share };
+  return { AddUsers, CreateSharedLink, Delete, Download, Edit, Leave, Lock, Options, Share, Unlock };
 };
 
 export const getAlbumAssetActions = ($t: MessageFormatter, album: AlbumResponseDto, asset: { id: string }) => {
@@ -136,15 +163,14 @@ export const getAlbumAssetsActions = ($t: MessageFormatter, album: AlbumResponse
     color: 'primary',
     icon: mdiPlusBoxOutline,
     $if: () => assets.length > 0,
-    onAction: () =>
-      executeMutation(addAssetsToAlbumsMutation, { albumIds: [album.id], assetIds: assets.map(({ id }) => id) }),
+    onAction: () => handleAddAssetsToAlbum(album, assets),
   };
 
   const Upload: ActionItem = {
     title: $t('select_from_computer'),
     description: $t('album_upload_assets'),
     icon: mdiUpload,
-    onAction: () => void openFileUploadDialog({ albumId: album.id }),
+    onAction: () => void openFileUploadDialog({ albumId: album.id, isLockedAssets: album.isLocked }),
   };
 
   return { AddAssets, Upload };
@@ -152,7 +178,72 @@ export const getAlbumAssetsActions = ($t: MessageFormatter, album: AlbumResponse
 
 const leaveAlbumPage = (album: AlbumResponseDto) => {
   if (page.params.albumId === album.id) {
-    void goto(Route.albums());
+    void goto(album.isLocked ? Route.lockedAlbums() : Route.albums());
+  }
+};
+
+const handleAddAssetsToAlbum = async (album: AlbumResponseDto, assets: TimelineAsset[]) => {
+  const $t = await getFormatter();
+  const hasUnlockedAssets = assets.some(({ visibility }) => visibility !== AssetVisibility.Locked);
+  const confirm = album.isLocked &&
+    hasUnlockedAssets && {
+      title: $t('add_to_locked_album'),
+      prompt: $t('add_to_locked_album_confirmation'),
+      confirmText: $t('add'),
+    };
+
+  await executeMutation(
+    addAssetsToAlbumsMutation,
+    { albumIds: [album.id], assetIds: assets.map(({ id }) => id) },
+    { confirm },
+  );
+};
+
+const setAlbumLocked = async (album: AlbumResponseDto, isLocked: boolean) => {
+  if (!(await requireElevatedSession())) {
+    return;
+  }
+
+  await executeMutation(
+    () =>
+      updateAlbumInfoMutation({
+        success: { toast: isLocked ? 'album_moved_to_locked_folder' : 'album_removed_from_locked_folder' },
+        error: { toast: 'errors.unable_to_update_album_locked_state' },
+      }),
+    [{ id: album.id, updateAlbumDto: { isLocked } }],
+    {
+      onSuccess: (updated) => {
+        if (page.params.albumId === album.id) {
+          void goto(Route.viewAlbum(updated), { replaceState: true });
+        }
+      },
+    },
+  );
+};
+
+export const handleLockAlbum = async (album: AlbumResponseDto) => {
+  const $t = await getFormatter();
+  const confirmed = await modalManager.showDialog({
+    title: $t('move_album_to_locked_folder'),
+    prompt: $t('move_album_to_locked_folder_confirmation'),
+    confirmText: $t('move_to_locked_folder'),
+  });
+
+  if (confirmed) {
+    await setAlbumLocked(album, true);
+  }
+};
+
+export const handleUnlockAlbum = async (album: AlbumResponseDto) => {
+  const $t = await getFormatter();
+  const confirmed = await modalManager.showDialog({
+    title: $t('remove_album_from_locked_folder'),
+    prompt: $t('remove_album_from_locked_folder_confirmation'),
+    confirmText: $t('remove_from_locked_folder'),
+  });
+
+  if (confirmed) {
+    await setAlbumLocked(album, false);
   }
 };
 
