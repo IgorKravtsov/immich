@@ -109,11 +109,12 @@ class _RemoteAlbumBottomSheetState extends ConsumerState<RemoteAlbumBottomSheet>
       ],
       slivers: ownsAlbum
           ? [
-              const AddToAlbumHeader(),
+              AddToAlbumHeader(showCreateAlbum: !widget.album.isLocked),
               AlbumSelector(
                 onAlbumSelected: addToAlbum,
                 onKeyboardExpanded: onKeyboardExpand,
                 canRevealLockedAlbums: true,
+                lockedOnly: widget.album.isLocked,
               ),
             ]
           : null,

@@ -47,6 +47,9 @@ class ViewerBottomBar extends ConsumerWidget {
     final actions = <Widget>[
       ..._actionColumnButtons(context, ref, const [RestoreAction(source: .viewer), ShareAction(source: .viewer)]),
 
+      if (isInLockedView && ref.watch(ownedAssetsActionProvider(.viewer)).isNotEmpty)
+        ImmichColorOverride(color: null, child: AddActionButton(originalTheme: originalTheme, lockedOnly: true)),
+
       if (!isInLockedView) ...[
         if (!isInTrash) ...[
           ..._actionColumnButtons(context, ref, const [

@@ -69,6 +69,10 @@ class RemoteAlbumService {
     return _repository.getAll();
   }
 
+  Future<List<RemoteAlbum>> getLocked() {
+    return _repository.getAll(isLocked: true);
+  }
+
   Stream<List<RemoteAlbum>> watchLocked() {
     return _repository.watchLocked();
   }

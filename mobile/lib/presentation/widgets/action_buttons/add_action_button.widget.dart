@@ -23,9 +23,10 @@ import 'package:immich_ui/immich_ui.dart';
 enum AddToMenuItem { album }
 
 class AddActionButton extends ConsumerStatefulWidget {
-  const AddActionButton({super.key, this.originalTheme});
+  const AddActionButton({super.key, this.originalTheme, this.lockedOnly = false});
 
   final ThemeData? originalTheme;
+  final bool lockedOnly;
 
   @override
   ConsumerState<AddActionButton> createState() => _AddActionButtonState();
@@ -60,7 +61,7 @@ class _AddActionButtonState extends ConsumerState<AddActionButton> {
         onPressed: () => _handleMenuSelection(AddToMenuItem.album),
       ),
 
-      if (isOwner) ...[
+      if (isOwner && !widget.lockedOnly) ...[
         const Divider(),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -80,8 +81,12 @@ class _AddActionButtonState extends ConsumerState<AddActionButton> {
     }
 
     final List<Widget> slivers = [
-      const CreateAlbumButton(),
-      AlbumSelector(onAlbumSelected: _addCurrentAssetToAlbum, canRevealLockedAlbums: true),
+      if (widget.lockedOnly) const AddToAlbumHeader(showCreateAlbum: false) else const CreateAlbumButton(),
+      AlbumSelector(
+        onAlbumSelected: _addCurrentAssetToAlbum,
+        canRevealLockedAlbums: true,
+        lockedOnly: widget.lockedOnly,
+      ),
     ];
 
     unawaited(

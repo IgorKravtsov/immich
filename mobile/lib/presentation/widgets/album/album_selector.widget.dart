@@ -36,12 +36,14 @@ class AlbumSelector extends ConsumerStatefulWidget {
   final AlbumSelectorCallback onAlbumSelected;
   final Function? onKeyboardExpanded;
   final bool canRevealLockedAlbums;
+  final bool lockedOnly;
 
   const AlbumSelector({
     super.key,
     required this.onAlbumSelected,
     this.onKeyboardExpanded,
     this.canRevealLockedAlbums = false,
+    this.lockedOnly = false,
   });
 
   @override
@@ -73,6 +75,7 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
       });
 
       unawaited(ref.read(remoteAlbumProvider.notifier).refresh());
+      unawaited(sortAlbums());
     });
 
     searchController.addListener(() {
@@ -129,13 +132,15 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
     unawaited(filterAlbums());
   }
 
-  List<RemoteAlbum> get selectableAlbums {
-    final albums = ref.read(remoteAlbumProvider).albums;
-    if (!showLockedAlbums) {
+  bool get includesLockedAlbums => widget.lockedOnly || showLockedAlbums;
+
+  Future<List<RemoteAlbum>> loadSelectableAlbums() async {
+    final albums = widget.lockedOnly ? const <RemoteAlbum>[] : ref.read(remoteAlbumProvider).albums;
+    if (!includesLockedAlbums) {
       return albums;
     }
 
-    return [...albums, ...ref.read(lockedAlbumsProvider).value ?? const []];
+    return [...albums, ...await ref.read(remoteAlbumServiceProvider).getLocked()];
   }
 
   Future<void> toggleLockedAlbums() async {
@@ -156,7 +161,7 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
   Future<void> sortAlbums() async {
     final sorted = await ref
         .read(remoteAlbumProvider.notifier)
-        .sortAlbums(selectableAlbums, sort.mode, isReverse: sort.isReverse);
+        .sortAlbums(await loadSelectableAlbums(), sort.mode, isReverse: sort.isReverse);
 
     if (!mounted) {
       return;
@@ -213,8 +218,9 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
       await sortAlbums();
     });
 
-    final canRevealLockedAlbums = widget.canRevealLockedAlbums && ref.watch(lockedAlbumsSupportedProvider);
-    if (showLockedAlbums) {
+    final canRevealLockedAlbums =
+        widget.canRevealLockedAlbums && !widget.lockedOnly && ref.watch(lockedAlbumsSupportedProvider);
+    if (includesLockedAlbums) {
       ref.listen(lockedAlbumsProvider, (_, _) async {
         await sortAlbums();
       });
@@ -812,7 +818,9 @@ class _GridAlbumCard extends ConsumerWidget {
 }
 
 class AddToAlbumHeader extends ConsumerWidget {
-  const AddToAlbumHeader({super.key});
+  const AddToAlbumHeader({super.key, this.showCreateAlbum = true});
+
+  final bool showCreateAlbum;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -847,19 +855,20 @@ class AddToAlbumHeader extends ConsumerWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(context.t.add_to_album, style: context.textTheme.titleSmall),
-            TextButton.icon(
-              style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), // remove internal padding
-                minimumSize: Size.zero, // allow shrinking
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap, // remove extra height
+            if (showCreateAlbum)
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), // remove internal padding
+                  minimumSize: Size.zero, // allow shrinking
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap, // remove extra height
+                ),
+                onPressed: onCreateAlbum,
+                icon: Icon(Icons.add, color: context.primaryColor),
+                label: Text(
+                  context.t.common_create_new_album,
+                  style: TextStyle(color: context.primaryColor, fontWeight: FontWeight.bold, fontSize: 14),
+                ),
               ),
-              onPressed: onCreateAlbum,
-              icon: Icon(Icons.add, color: context.primaryColor),
-              label: Text(
-                context.t.common_create_new_album,
-                style: TextStyle(color: context.primaryColor, fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-            ),
           ],
         ),
       ),
