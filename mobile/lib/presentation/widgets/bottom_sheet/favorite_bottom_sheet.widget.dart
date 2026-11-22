@@ -87,7 +87,7 @@ class FavoriteBottomSheet extends ConsumerWidget {
         .new(action: CleanupLocalAction(source: .timeline)),
       ],
       slivers: multiselect.hasRemote
-          ? [const AddToAlbumHeader(), AlbumSelector(onAlbumSelected: addAssetsToAlbum)]
+          ? [const AddToAlbumHeader(), AlbumSelector(onAlbumSelected: addAssetsToAlbum, canRevealLockedAlbums: true)]
           : [],
     );
   }

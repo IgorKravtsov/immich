@@ -89,7 +89,7 @@ class _ArchiveBottomSheetState extends ConsumerState<ArchiveBottomSheet> {
       ],
       slivers: [
         const AddToAlbumHeader(),
-        AlbumSelector(onAlbumSelected: addToAlbum, onKeyboardExpanded: onKeyboardExpand),
+        AlbumSelector(onAlbumSelected: addToAlbum, onKeyboardExpanded: onKeyboardExpand, canRevealLockedAlbums: true),
       ],
     );
   }

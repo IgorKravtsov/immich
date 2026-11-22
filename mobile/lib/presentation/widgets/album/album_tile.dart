@@ -24,11 +24,21 @@ class AlbumTile extends ConsumerWidget {
         .then((cover) => visibleAlbumCover(album, cover));
 
     return LargeLeadingTile(
-      title: Text(
-        album.name,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-        style: context.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+      title: Row(
+        children: [
+          if (album.isLocked) ...[
+            Icon(Icons.lock_outline_rounded, size: 16, color: context.colorScheme.primary),
+            const SizedBox(width: 4),
+          ],
+          Expanded(
+            child: Text(
+              album.name,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: context.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
       ),
       subtitle: Text(
         '${context.t.items_count(count: album.assetCount)} • ${isOwner ? context.t.owned : context.t.shared_by_user(user: album.ownerName)}',

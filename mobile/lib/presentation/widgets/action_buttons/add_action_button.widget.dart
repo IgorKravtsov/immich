@@ -81,7 +81,7 @@ class _AddActionButtonState extends ConsumerState<AddActionButton> {
 
     final List<Widget> slivers = [
       const CreateAlbumButton(),
-      AlbumSelector(onAlbumSelected: (album) => _addCurrentAssetToAlbum(album)),
+      AlbumSelector(onAlbumSelected: _addCurrentAssetToAlbum, canRevealLockedAlbums: true),
     ];
 
     unawaited(

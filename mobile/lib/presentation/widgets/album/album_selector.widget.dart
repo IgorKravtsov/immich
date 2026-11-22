@@ -14,10 +14,12 @@ import 'package:immich_mobile/models/albums/album_search.model.dart';
 import 'package:immich_mobile/presentation/widgets/album/album_tile.dart';
 import 'package:immich_mobile/presentation/widgets/album/new_album_name_modal.widget.dart';
 import 'package:immich_mobile/presentation/widgets/images/thumbnail.widget.dart';
+import 'package:immich_mobile/presentation/widgets/locked/elevated_session.dart';
 import 'package:immich_mobile/providers/album/album_sort_by_options.provider.dart';
 import 'package:immich_mobile/providers/asset_viewer/asset_viewer.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/asset.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/remote_album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
 import 'package:immich_mobile/providers/timeline/multiselect.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
@@ -33,8 +35,14 @@ typedef AlbumSelectorCallback = void Function(RemoteAlbum album);
 class AlbumSelector extends ConsumerStatefulWidget {
   final AlbumSelectorCallback onAlbumSelected;
   final Function? onKeyboardExpanded;
+  final bool canRevealLockedAlbums;
 
-  const AlbumSelector({super.key, required this.onAlbumSelected, this.onKeyboardExpanded});
+  const AlbumSelector({
+    super.key,
+    required this.onAlbumSelected,
+    this.onKeyboardExpanded,
+    this.canRevealLockedAlbums = false,
+  });
 
   @override
   ConsumerState<AlbumSelector> createState() => _AlbumSelectorState();
@@ -42,6 +50,7 @@ class AlbumSelector extends ConsumerStatefulWidget {
 
 class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
   bool isGrid = false;
+  bool showLockedAlbums = false;
   final searchController = TextEditingController();
   final menuController = MenuController();
   final searchFocusNode = FocusNode();
@@ -120,10 +129,34 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
     unawaited(filterAlbums());
   }
 
+  List<RemoteAlbum> get selectableAlbums {
+    final albums = ref.read(remoteAlbumProvider).albums;
+    if (!showLockedAlbums) {
+      return albums;
+    }
+
+    return [...albums, ...ref.read(lockedAlbumsProvider).value ?? const []];
+  }
+
+  Future<void> toggleLockedAlbums() async {
+    if (showLockedAlbums) {
+      setState(() => showLockedAlbums = false);
+      await sortAlbums();
+      return;
+    }
+
+    if (!await ensureElevatedSession(context, ref, alwaysVerify: true) || !mounted) {
+      return;
+    }
+
+    setState(() => showLockedAlbums = true);
+    await sortAlbums();
+  }
+
   Future<void> sortAlbums() async {
     final sorted = await ref
         .read(remoteAlbumProvider.notifier)
-        .sortAlbums(ref.read(remoteAlbumProvider).albums, sort.mode, isReverse: sort.isReverse);
+        .sortAlbums(selectableAlbums, sort.mode, isReverse: sort.isReverse);
 
     if (!mounted) {
       return;
@@ -180,6 +213,13 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
       await sortAlbums();
     });
 
+    final canRevealLockedAlbums = widget.canRevealLockedAlbums && ref.watch(lockedAlbumsSupportedProvider);
+    if (showLockedAlbums) {
+      ref.listen(lockedAlbumsProvider, (_, _) async {
+        await sortAlbums();
+      });
+    }
+
     return PopScope(
       onPopInvokedWithResult: (didPop, _) {
         menuController.close();
@@ -206,6 +246,8 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
             controller: menuController,
             currentSortMode: sort.mode,
             currentIsReverse: sort.isReverse,
+            showLockedAlbums: showLockedAlbums,
+            onToggleLockedAlbums: canRevealLockedAlbums ? toggleLockedAlbums : null,
           ),
           isGrid
               ? _AlbumGrid(albums: shownAlbums, userId: userId, onAlbumSelected: widget.onAlbumSelected)
@@ -516,10 +558,14 @@ class _QuickSortAndViewMode extends StatelessWidget {
     required this.onSortChanged,
     required this.currentSortMode,
     required this.currentIsReverse,
+    required this.showLockedAlbums,
+    this.onToggleLockedAlbums,
     this.controller,
   });
 
   final bool isGrid;
+  final bool showLockedAlbums;
+  final VoidCallback? onToggleLockedAlbums;
   final VoidCallback onToggleViewMode;
   final MenuController? controller;
   final Future<void> Function(AlbumSort) onSortChanged;
@@ -540,13 +586,30 @@ class _QuickSortAndViewMode extends StatelessWidget {
               initialSortMode: currentSortMode,
               initialIsReverse: currentIsReverse,
             ),
-            IconButton(
-              icon: Icon(
-                isGrid ? Icons.view_list_outlined : Icons.grid_view_outlined,
-                size: 24,
-                color: context.colorScheme.onSurface,
-              ),
-              onPressed: onToggleViewMode,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (onToggleLockedAlbums != null)
+                  IconButton(
+                    tooltip: context.t.locked_albums_show,
+                    icon: Icon(
+                      showLockedAlbums ? Icons.lock_open_outlined : Icons.lock_outline_rounded,
+                      size: 20,
+                      color: showLockedAlbums
+                          ? context.colorScheme.primary
+                          : context.colorScheme.onSurface.withAlpha(90),
+                    ),
+                    onPressed: onToggleLockedAlbums,
+                  ),
+                IconButton(
+                  icon: Icon(
+                    isGrid ? Icons.view_list_outlined : Icons.grid_view_outlined,
+                    size: 24,
+                    color: context.colorScheme.onSurface,
+                  ),
+                  onPressed: onToggleViewMode,
+                ),
+              ],
             ),
           ],
         ),
@@ -715,11 +778,21 @@ class _GridAlbumCard extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    Text(
-                      album.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                    Row(
+                      children: [
+                        if (album.isLocked) ...[
+                          Icon(Icons.lock_outline_rounded, size: 14, color: context.colorScheme.primary),
+                          const SizedBox(width: 4),
+                        ],
+                        Expanded(
+                          child: Text(
+                            album.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: context.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
                     ),
                     Text(
                       '${context.t.items_count(count: album.assetCount)} • ${album.ownerId != userId ? context.t.shared_by_user(user: album.ownerName) : context.t.owned}',

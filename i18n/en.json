@@ -1368,6 +1368,7 @@
   "locked_album_unlock_confirmation": "Your photos that are only in this album return to your timeline. Your photos that are also in other locked albums stay locked and are removed from this album. Photos added by other people are removed from this album and stay in their Locked Folder.",
   "locked_album_update_failed": "Failed to update the album's Locked Folder state",
   "locked_albums_empty": "No albums in the Locked Folder",
+  "locked_albums_show": "Show locked albums",
   "locked_backup_album_hint": "Backed up to the Locked Folder",
   "locked_folder": "Locked Folder",
   "locked_no_partners": "You are not sharing your photos with any partner yet",

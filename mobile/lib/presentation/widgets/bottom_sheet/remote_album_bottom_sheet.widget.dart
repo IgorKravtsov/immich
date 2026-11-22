@@ -108,7 +108,14 @@ class _RemoteAlbumBottomSheetState extends ConsumerState<RemoteAlbumBottomSheet>
         ],
       ],
       slivers: ownsAlbum
-          ? [const AddToAlbumHeader(), AlbumSelector(onAlbumSelected: addToAlbum, onKeyboardExpanded: onKeyboardExpand)]
+          ? [
+              const AddToAlbumHeader(),
+              AlbumSelector(
+                onAlbumSelected: addToAlbum,
+                onKeyboardExpanded: onKeyboardExpand,
+                canRevealLockedAlbums: true,
+              ),
+            ]
           : null,
     );
   }

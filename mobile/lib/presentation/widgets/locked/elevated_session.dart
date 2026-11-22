@@ -12,7 +12,7 @@ import 'package:logging/logging.dart';
 
 final _log = Logger('ElevatedSession');
 
-Future<bool> ensureElevatedSession(BuildContext context, WidgetRef ref) async {
+Future<bool> ensureElevatedSession(BuildContext context, WidgetRef ref, {bool alwaysVerify = false}) async {
   final status = await ref.read(apiServiceProvider).authenticationApi.getAuthStatus();
   if (status == null || !context.mounted) {
     return false;
@@ -23,7 +23,7 @@ Future<bool> ensureElevatedSession(BuildContext context, WidgetRef ref) async {
     return false;
   }
 
-  if (status.isElevated) {
+  if (status.isElevated && !alwaysVerify) {
     return true;
   }
 
