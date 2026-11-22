@@ -16,7 +16,7 @@
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '#lib/stores/slideshow.store.ts';
   import { handlePromiseError } from '#lib/utils.ts';
   import { fileUploadHandler, openFileUploadDialog } from '#lib/utils/file-uploader.ts';
-  import type { AlbumResponseDto, SharedLinkResponseDto } from '@immich/sdk';
+  import { AssetVisibility, type AlbumResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
   import { ActionButton, IconButton, Logo, shortcut } from '@immich/ui';
   import { mdiDownload, mdiFileImagePlusOutline, mdiPresentationPlay } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -37,7 +37,11 @@
 
   let { slideshowState, slideshowNavigation } = slideshowStore;
 
-  const options = $derived({ albumId: album.id, order: album.order });
+  const options = $derived({
+    albumId: album.id,
+    order: album.order,
+    ...(album.isLocked && { visibility: AssetVisibility.Locked }),
+  });
   let timelineManager = $state<TimelineManager>() as TimelineManager;
 
   dragAndDropFilesStore.subscribe((value) => {

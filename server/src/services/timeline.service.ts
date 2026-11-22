@@ -45,7 +45,8 @@ export class TimelineService extends BaseService {
   }
 
   private async timeBucketChecks(auth: AuthDto, dto: TimeBucketDto) {
-    if (dto.visibility === AssetVisibility.Locked) {
+    const isSharedLinkAlbum = !!auth.sharedLink && !!dto.albumId;
+    if (dto.visibility === AssetVisibility.Locked && !isSharedLinkAlbum) {
       requireElevatedPermission(auth);
     }
 

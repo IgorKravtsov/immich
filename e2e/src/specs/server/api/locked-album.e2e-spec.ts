@@ -168,6 +168,19 @@ describe('locked albums', () => {
       expect(updateStatus).toBe(400);
     });
 
+    it('should show the locked album assets through a protected link', async () => {
+      const { body: link } = await request(app)
+        .post('/shared-links')
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({ type: SharedLinkType.Album, albumId: lockedAlbumId, password: 'secret' });
+
+      const { status, body } = await request(app)
+        .get('/timeline/buckets')
+        .query({ key: link.key, albumId: lockedAlbumId, visibility: AssetVisibility.Locked });
+      expect(status).toBe(200);
+      expect(body.reduce((sum: number, { count }: { count: number }) => sum + count, 0)).toBeGreaterThan(0);
+    });
+
     it('should stop serving an asset through an unprotected link once it is locked', async () => {
       const asset = await utils.createAsset(owner.accessToken);
       const { body: link } = await request(app)

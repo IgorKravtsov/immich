@@ -257,6 +257,27 @@ describe(TimelineService.name, () => {
       );
     });
 
+    it('should allow locked assets of an album through a shared link', async () => {
+      const json = `[{ id: ['asset-id'] }]`;
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: json });
+      mocks.access.album.checkSharedLinkAccess.mockResolvedValue(new Set(['album-id']));
+
+      await expect(
+        sut.getTimeBucket(authStub.adminSharedLink, {
+          timeBucket: 'bucket',
+          albumId: 'album-id',
+          visibility: AssetVisibility.Locked,
+        }),
+      ).resolves.toEqual(json);
+    });
+
+    it('should reject locked assets through a shared link without an album', async () => {
+      await expect(
+        sut.getTimeBucket(authStub.adminSharedLink, { timeBucket: 'bucket', visibility: AssetVisibility.Locked }),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(mocks.asset.getTimeBucket).not.toHaveBeenCalled();
+    });
+
     it("should reject another user's locked assets without an elevated session", async () => {
       mocks.access.timeline.checkPartnerAccess.mockResolvedValue(new Set(['partner-id']));
 
