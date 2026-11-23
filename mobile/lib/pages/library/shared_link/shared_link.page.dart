@@ -18,6 +18,8 @@ class SharedLinkPage extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sharedLinks = ref.watch(sharedLinksStateProvider);
+    final isElevated = ref.watch(sharedLinksSessionElevatedProvider).value ?? false;
+    final hasLockedLinks = sharedLinks.value?.any((link) => link.isLocked) ?? false;
 
     useEffect(() {
       unawaited(ref.read(sharedLinksStateProvider.notifier).fetchLinks());
@@ -41,6 +43,13 @@ class SharedLinkPage extends HookConsumerWidget {
         }),
       );
     });
+
+    Future<void> lock() async {
+      await ref.read(authProvider.notifier).lockPinCode();
+      if (context.mounted) {
+        ref.invalidate(sharedLinksSessionElevatedProvider);
+      }
+    }
 
     Future<void> refresh() async {
       ref.invalidate(sharedLinksSessionElevatedProvider);
@@ -89,7 +98,20 @@ class SharedLinkPage extends HookConsumerWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text(context.t.shared_link_app_bar_title), elevation: 0, centerTitle: false),
+      appBar: AppBar(
+        title: Text(context.t.shared_link_app_bar_title),
+        elevation: 0,
+        centerTitle: false,
+        actions: [
+          if (isElevated && hasLockedLinks)
+            IconButton(
+              key: const ValueKey('shared-links-lock'),
+              icon: const Icon(Icons.lock_outline),
+              tooltip: context.t.lock,
+              onPressed: lock,
+            ),
+        ],
+      ),
       body: SafeArea(
         child: sharedLinks.widgetWhen(
           onError: (error, stackTrace) => buildNoShares(),
