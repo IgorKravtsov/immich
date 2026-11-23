@@ -1,8 +1,11 @@
 <script lang="ts">
+  import OnEvents from '#lib/components/OnEvents.svelte';
   import UserPageLayout from '#lib/components/layouts/UserPageLayout.svelte';
   import { type SharedLinkTab } from '#lib/constants.ts';
   import GroupTab from '#lib/elements/GroupTab.svelte';
-  import { createPreloadedQuery } from '#lib/queries/client.ts';
+  import { getAuthStatusQuery } from '#lib/queries/auth.query.ts';
+  import { createPreloadedQuery, queryClient } from '#lib/queries/client.ts';
+  import { QueryKeys } from '#lib/queries/query-keys.ts';
   import { getAllSharedLinksQuery } from '#lib/queries/shared-link.query.ts';
   import { Route } from '#lib/route.ts';
   import { SharedLinkType } from '@immich/sdk';
@@ -23,6 +26,15 @@
 
   const query = createPreloadedQuery(getAllSharedLinksQuery);
   const sharedLinks = $derived(query.data);
+
+  const authStatus = createPreloadedQuery(getAuthStatusQuery);
+  const isElevated = $derived(authStatus.data.isElevated);
+
+  const onSessionLocked = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: QueryKeys.authStatus() }),
+      queryClient.invalidateQueries({ queryKey: QueryKeys.sharedLinks() }),
+    ]);
 
   const filterMap: Record<SharedLinkTab, string> = {
     all: $t('all'),
@@ -50,6 +62,8 @@
   );
 </script>
 
+<OnEvents {onSessionLocked} />
+
 <UserPageLayout title={data.meta.title}>
   {#snippet buttons()}
     <div class="hidden h-10 xl:block">
@@ -73,7 +87,7 @@
     {:else}
       <div class="flex flex-col gap-2">
         {#each filteredSharedLinks as sharedLink (sharedLink.id)}
-          <SharedLinkCard {sharedLink} />
+          <SharedLinkCard {sharedLink} {isElevated} />
         {/each}
       </div>
     {/if}

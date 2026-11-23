@@ -30,6 +30,26 @@ test.describe('shared link', () => {
     await expect(app.sharedLink.card(added)).toBeVisible();
   });
 
+  test('hides a locked album link behind the PIN code', async ({ page, data, api, app }) => {
+    const album = factory.album({ albumName: 'Secret Album', isLocked: true });
+    data.addAlbums(album);
+    const link = factory.sharedLink({ type: SharedLinkType.Album, album, password: 'secret' });
+    data.addSharedLinks(link);
+    data.setAuthStatus({ pinCode: true, isElevated: false });
+    await page.goto(Route.sharedLinks());
+
+    const lockedCard = app.sharedLink.lockedCard('Secret Album');
+    await expect(lockedCard.getByTestId('locked-cover')).toBeVisible();
+    await expect(app.sharedLink.card(link)).toHaveCount(0);
+
+    await lockedCard.click();
+    await page.getByRole('dialog').getByRole('textbox').first().pressSequentially('123456');
+
+    expect(api.unlockAuthSession).toHaveBeenCalledWith({ body: { pinCode: '123456' } });
+    await expect(app.sharedLink.card(link)).toBeVisible();
+    await expect(app.sharedLink.card(link).getByTestId('locked-cover')).toHaveCount(0);
+  });
+
   test('guest downloads one asset and then the whole album', async ({ page, context, data, api, app }) => {
     const { link, album, assets } = setup(data);
     await context.clearCookies();

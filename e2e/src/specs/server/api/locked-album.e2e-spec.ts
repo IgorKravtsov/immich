@@ -10,6 +10,9 @@ const recipientPin = '654321';
 const unlock = (accessToken: string, pinCode: string) =>
   request(app).post('/auth/session/unlock').set('Authorization', `Bearer ${accessToken}`).send({ pinCode });
 
+const lock = (accessToken: string) =>
+  request(app).post('/auth/session/lock').set('Authorization', `Bearer ${accessToken}`);
+
 const setupPin = (accessToken: string, pinCode: string) =>
   request(app).post('/auth/pin-code').set('Authorization', `Bearer ${accessToken}`).send({ pinCode });
 
@@ -201,6 +204,41 @@ describe('locked albums', () => {
 
       const { body: mine } = await request(app).get('/shared-links/me').query({ key: link.key });
       expect(mine.assets ?? []).toEqual([]);
+    });
+
+    it('should hide the locked album cover from the owner list without an elevated session', async () => {
+      await unlock(owner.accessToken, ownerPin);
+      await request(app)
+        .patch(`/albums/${lockedAlbumId}`)
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({ albumThumbnailAssetId: ownerAssets[1].id });
+      const { body: link } = await request(app)
+        .post('/shared-links')
+        .set('Authorization', `Bearer ${owner.accessToken}`)
+        .send({ type: SharedLinkType.Album, albumId: lockedAlbumId, password: 'secret' });
+
+      const elevated = await request(app)
+        .get('/shared-links')
+        .query({ id: link.id })
+        .set('Authorization', `Bearer ${owner.accessToken}`);
+      expect(elevated.body[0].album).toMatchObject({ isLocked: true, albumThumbnailAssetId: ownerAssets[1].id });
+
+      await lock(owner.accessToken);
+
+      const list = await request(app)
+        .get('/shared-links')
+        .query({ id: link.id })
+        .set('Authorization', `Bearer ${owner.accessToken}`);
+      expect(list.status).toBe(200);
+      expect(list.body[0].album).toMatchObject({ isLocked: true, albumThumbnailAssetId: null });
+
+      const single = await request(app)
+        .get(`/shared-links/${link.id}`)
+        .set('Authorization', `Bearer ${owner.accessToken}`);
+      expect(single.status).toBe(200);
+      expect(single.body.album).toMatchObject({ isLocked: true, albumThumbnailAssetId: null });
+
+      await unlock(owner.accessToken, ownerPin);
     });
 
     it('should require a password for links to locked assets', async () => {
