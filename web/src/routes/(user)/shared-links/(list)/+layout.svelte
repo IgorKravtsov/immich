@@ -8,6 +8,7 @@
   import { QueryKeys } from '#lib/queries/query-keys.ts';
   import { getAllSharedLinksQuery } from '#lib/queries/shared-link.query.ts';
   import { Route } from '#lib/route.ts';
+  import { getUserActions } from '#lib/services/user.service.ts';
   import { SharedLinkType } from '@immich/sdk';
   import { Container } from '@immich/ui';
   import { type Snippet } from 'svelte';
@@ -29,6 +30,9 @@
 
   const authStatus = createPreloadedQuery(getAuthStatusQuery);
   const isElevated = $derived(authStatus.data.isElevated);
+
+  const { LockSession } = $derived(getUserActions($t));
+  const hasUnlockedLockedAlbum = $derived(isElevated && sharedLinks.some(({ album }) => album?.isLocked));
 
   const onSessionLocked = () =>
     Promise.all([
@@ -64,7 +68,7 @@
 
 <OnEvents {onSessionLocked} />
 
-<UserPageLayout title={data.meta.title}>
+<UserPageLayout title={data.meta.title} actions={hasUnlockedLockedAlbum ? [LockSession] : []}>
   {#snippet buttons()}
     <div class="hidden h-10 xl:block">
       <GroupTab

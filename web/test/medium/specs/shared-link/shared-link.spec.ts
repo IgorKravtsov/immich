@@ -48,6 +48,21 @@ test.describe('shared link', () => {
     expect(api.unlockAuthSession).toHaveBeenCalledWith({ body: { pinCode: '123456' } });
     await expect(app.sharedLink.card(link)).toBeVisible();
     await expect(app.sharedLink.card(link).getByTestId('locked-cover')).toHaveCount(0);
+
+    await app.sharedLink.lockButton.click();
+
+    expect(api.lockAuthSession).toHaveBeenCalled();
+    await expect(lockedCard.getByTestId('locked-cover')).toBeVisible();
+    await expect(app.sharedLink.lockButton).toHaveCount(0);
+  });
+
+  test('does not show the lock button without locked album links', async ({ page, data, app }) => {
+    const { link } = setup(data);
+    data.setAuthStatus({ pinCode: true, isElevated: true });
+    await page.goto(Route.sharedLinks());
+
+    await expect(app.sharedLink.card(link)).toBeVisible();
+    await expect(app.sharedLink.lockButton).toHaveCount(0);
   });
 
   test('guest downloads one asset and then the whole album', async ({ page, context, data, api, app }) => {
