@@ -12,7 +12,7 @@ import { UserFactory } from 'test/factories/user.factory.js';
 import { authStub } from 'test/fixtures/auth.stub.js';
 import { sharedLinkStub } from 'test/fixtures/shared-link.stub.js';
 import { getForAlbum, getForSharedLink } from 'test/mappers.js';
-import { factory } from 'test/small.factory.js';
+import { factory, newUuid } from 'test/small.factory.js';
 import { ServiceMocks, expectResourceEvents, newTestService } from 'test/utils.js';
 
 describe(SharedLinkService.name, () => {
@@ -37,6 +37,44 @@ describe(SharedLinkService.name, () => {
         ),
       );
       expect(mocks.sharedLink.getAll).toHaveBeenCalledWith({ userId: authStub.user1.user.id });
+    });
+
+    it('should hide the cover of a locked album without an elevated session', async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: false }).build();
+      const sharedLink = SharedLinkFactory.from({ userId: auth.user.id })
+        .album({ isLocked: true, albumThumbnailAssetId: newUuid() })
+        .build();
+      mocks.sharedLink.getAll.mockResolvedValue([getForSharedLink(sharedLink)]);
+
+      const [response] = await sut.getAll(auth, {});
+
+      expect(response.album).toMatchObject({ isLocked: true, albumThumbnailAssetId: null });
+    });
+
+    it('should show the cover of a locked album with an elevated session', async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
+      const albumThumbnailAssetId = newUuid();
+      const sharedLink = SharedLinkFactory.from({ userId: auth.user.id })
+        .album({ isLocked: true, albumThumbnailAssetId })
+        .build();
+      mocks.sharedLink.getAll.mockResolvedValue([getForSharedLink(sharedLink)]);
+
+      const [response] = await sut.getAll(auth, {});
+
+      expect(response.album).toMatchObject({ isLocked: true, albumThumbnailAssetId });
+    });
+
+    it('should show the cover of an unlocked album without an elevated session', async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: false }).build();
+      const albumThumbnailAssetId = newUuid();
+      const sharedLink = SharedLinkFactory.from({ userId: auth.user.id })
+        .album({ isLocked: false, albumThumbnailAssetId })
+        .build();
+      mocks.sharedLink.getAll.mockResolvedValue([getForSharedLink(sharedLink)]);
+
+      const [response] = await sut.getAll(auth, {});
+
+      expect(response.album).toMatchObject({ isLocked: false, albumThumbnailAssetId });
     });
   });
 
@@ -127,6 +165,19 @@ describe(SharedLinkService.name, () => {
         mapSharedLink(getForSharedLink(sharedLink), { auth: authStub.user1 }),
       );
       expect(mocks.sharedLink.get).toHaveBeenCalledWith(authStub.user1.user.id, sharedLink.id);
+    });
+
+    it('should hide the cover of a locked album without an elevated session', async () => {
+      const auth = AuthFactory.from().session({ hasElevatedPermission: false }).build();
+      const sharedLink = SharedLinkFactory.from({ userId: auth.user.id })
+        .album({ isLocked: true, albumThumbnailAssetId: newUuid() })
+        .build();
+      mocks.sharedLink.get.mockResolvedValue(getForSharedLink(sharedLink));
+      mocks.album.getMetadataForIds.mockResolvedValue([]);
+
+      const response = await sut.get(auth, sharedLink.id);
+
+      expect(response.album).toMatchObject({ isLocked: true, albumThumbnailAssetId: null });
     });
   });
 

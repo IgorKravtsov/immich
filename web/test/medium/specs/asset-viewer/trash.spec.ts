@@ -4,6 +4,7 @@ import { expect, test } from '#test/medium/fixtures.ts';
 
 test.describe('trash from the viewer', () => {
   test('restores an asset opened from the trash', async ({ page, data, api, app }) => {
+    data.setAuthStatus({ pinCode: true, isElevated: true });
     const asset = factory.asset({ isTrashed: true });
     data.addAssets(asset);
     await page.goto(Route.trash());

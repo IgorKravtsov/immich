@@ -75,6 +75,7 @@ test.describe('asset viewer navigation', () => {
 
   test.describe('/trash/photos/:id', () => {
     test('permanently delete advances to the next asset', async ({ page, data, api, app }) => {
+      data.setAuthStatus({ pinCode: true, isElevated: true });
       const trashed = data.addTimeline({ years: 1 }).slice(100, 120);
       data.deleteAssets(trashed.map(({ id }) => id));
       await page.goto(Route.viewTrashedAsset({ id: trashed[10].id }));
@@ -90,6 +91,7 @@ test.describe('asset viewer navigation', () => {
     });
 
     test('permanently delete at the end goes back to the previous asset', async ({ page, data, api, app }) => {
+      data.setAuthStatus({ pinCode: true, isElevated: true });
       const trashed = data.addTimeline({ years: 1 }).slice(100, 120);
       data.deleteAssets(trashed.map(({ id }) => id));
       await page.goto(Route.viewTrashedAsset({ id: trashed[19].id }));

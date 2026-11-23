@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/models/shared_link/shared_link.model.dart';
+import 'package:immich_mobile/providers/api.provider.dart';
 import 'package:immich_mobile/services/shared_link.service.dart';
 
 class SharedLinksNotifier extends StateNotifier<AsyncValue<List<SharedLink>>> {
@@ -24,4 +25,9 @@ class SharedLinksNotifier extends StateNotifier<AsyncValue<List<SharedLink>>> {
 
 final sharedLinksStateProvider = StateNotifierProvider<SharedLinksNotifier, AsyncValue<List<SharedLink>>>((ref) {
   return SharedLinksNotifier(ref.watch(sharedLinkServiceProvider));
+});
+
+final sharedLinksSessionElevatedProvider = FutureProvider.autoDispose<bool>((ref) async {
+  final status = await ref.watch(apiServiceProvider).authenticationApi.getAuthStatus();
+  return status?.isElevated ?? false;
 });

@@ -14,13 +14,17 @@ import 'package:immich_mobile/widgets/forms/pin_verification_form.dart';
 @RoutePage()
 class PinAuthPage extends HookConsumerWidget {
   final bool createPinCode;
+  final PageRouteInfo? successRoute;
 
-  const PinAuthPage({super.key, this.createPinCode = false});
+  const PinAuthPage({super.key, this.createPinCode = false, this.successRoute});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final localAuthState = ref.watch(localAuthProvider);
     final showPinRegistrationForm = useState(createPinCode);
+    final destination = successRoute ?? const LockedFolderRoute();
+    final isTrash = destination.routeName == TrashRoute.name;
+    final title = isTrash ? context.t.trash : context.t.locked_folder;
 
     Future<void> registerBiometric(String pinCode) async {
       final isRegistered = await ref.read(localAuthProvider.notifier).registerBiometric(context, pinCode);
@@ -37,7 +41,7 @@ class PinAuthPage extends HookConsumerWidget {
         ),
       );
 
-      unawaited(context.replaceRoute(const LockedFolderRoute()));
+      unawaited(context.replaceRoute(destination));
     }
 
     Future<void> enableBiometricAuth() {
@@ -71,7 +75,7 @@ class PinAuthPage extends HookConsumerWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(title: Text(context.t.locked_folder)),
+      appBar: AppBar(title: Text(title)),
       body: ListView(
         shrinkWrap: true,
         children: [
@@ -84,8 +88,9 @@ class PinAuthPage extends HookConsumerWidget {
                       Center(
                         child: PinVerificationForm(
                           autoFocus: true,
+                          description: isTrash ? context.t.enter_your_pin_code_trash_subtitle : null,
                           onSuccess: (_) {
-                            unawaited(context.replaceRoute(const LockedFolderRoute()));
+                            unawaited(context.replaceRoute(destination));
                           },
                         ),
                       ),

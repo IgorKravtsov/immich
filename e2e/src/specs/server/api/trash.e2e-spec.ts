@@ -1,4 +1,10 @@
-import { LoginResponseDto, getAssetInfo, getAssetStatistics } from '@immich/sdk';
+import {
+  LoginResponseDto,
+  getAssetInfo,
+  getAssetStatistics,
+  setupPinCode,
+  unlockAuthSession,
+} from '@immich/sdk';
 import { existsSync } from 'node:fs';
 import { Socket } from 'socket.io-client';
 import { app, asBearerAuth, testAssetDir, testAssetDirInternal, utils } from 'src/utils.js';
@@ -12,7 +18,44 @@ describe('/trash', () => {
   beforeAll(async () => {
     await utils.resetDatabase();
     admin = await utils.adminSetup({ onboarding: false });
+    await setupPinCode({ pinCodeSetupDto: { pinCode: '123456' } }, { headers: asBearerAuth(admin.accessToken) });
+    await unlockAuthSession({ sessionUnlockDto: { pinCode: '123456' } }, { headers: asBearerAuth(admin.accessToken) });
     ws = await utils.connectWebsocket(admin.accessToken);
+  });
+
+  describe('without an unlocked session', () => {
+    let user: LoginResponseDto;
+
+    beforeAll(async () => {
+      user = await utils.userSetup(admin.accessToken, {
+        email: 'trash-locked@immich.cloud',
+        name: 'Trash Locked',
+        password: 'password',
+      });
+    });
+
+    it('should not list trashed assets', async () => {
+      const { status } = await request(app)
+        .get('/timeline/buckets')
+        .query({ isTrashed: true })
+        .set('Authorization', `Bearer ${user.accessToken}`);
+      expect(status).toBe(401);
+    });
+
+    it('should not search trashed assets', async () => {
+      const { status } = await request(app)
+        .post('/search/metadata')
+        .send({ withDeleted: true })
+        .set('Authorization', `Bearer ${user.accessToken}`);
+      expect(status).toBe(401);
+    });
+
+    it('should not empty or restore the trash', async () => {
+      for (const path of ['/trash/empty', '/trash/restore']) {
+        const { status } = await request(app).post(path).set('Authorization', `Bearer ${user.accessToken}`);
+        expect(status).toBe(401);
+      }
+    });
   });
 
   afterAll(() => {

@@ -25,8 +25,7 @@ export class SharedLinkService extends BaseService {
   async getAll(auth: AuthDto, { id, albumId }: SharedLinkSearchDto): Promise<SharedLinkResponseDto[]> {
     return this.sharedLinkRepository
       .getAll({ userId: auth.user.id, id, albumId })
-
-      .then((links) => links.map((link) => mapSharedLink(link, { auth })));
+      .then((links) => links.map((link) => this.hideLockedAlbumCover(auth, mapSharedLink(link, { auth }))));
   }
 
   async login(auth: AuthDto, dto: SharedLinkLoginDto) {
@@ -68,7 +67,7 @@ export class SharedLinkService extends BaseService {
 
   async get(auth: AuthDto, id: string): Promise<SharedLinkResponseDto> {
     const sharedLink = await this.findOrFail(auth.user.id, id);
-    return this.mapWithAlbumMetadata(sharedLink, { auth });
+    return this.hideLockedAlbumCover(auth, await this.mapWithAlbumMetadata(sharedLink, { auth }));
   }
 
   async create(auth: AuthDto, dto: SharedLinkCreateDto): Promise<SharedLinkResponseDto> {
@@ -302,6 +301,14 @@ export class SharedLinkService extends BaseService {
       response.album.startDate = asDateTimeString(metadata?.startDate ?? undefined);
       response.album.endDate = asDateTimeString(metadata?.endDate ?? undefined);
       response.album.assetCount = metadata?.assetCount ?? 0;
+    }
+
+    return response;
+  }
+
+  private hideLockedAlbumCover(auth: AuthDto, response: SharedLinkResponseDto) {
+    if (response.album?.isLocked && !auth.session?.hasElevatedPermission) {
+      response.album.albumThumbnailAssetId = null;
     }
 
     return response;

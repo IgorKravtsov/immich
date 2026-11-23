@@ -47,7 +47,9 @@
           </div>
         {/if}
 
-        <p class="text-center text-sm" style="text-wrap: pretty;">{$t('enter_your_pin_code_subtitle')}</p>
+        <p class="text-center text-sm" style="text-wrap: pretty;">
+          {data.isTrash ? $t('enter_your_pin_code_trash_subtitle') : $t('enter_your_pin_code_subtitle')}
+        </p>
 
         <PinInput password autofocus bind:value={pinCode} onComplete={handleUnlockSession} />
       {:else}

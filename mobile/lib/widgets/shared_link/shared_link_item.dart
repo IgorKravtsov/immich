@@ -8,6 +8,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/models/shared_link/shared_link.model.dart';
+import 'package:immich_mobile/presentation/widgets/locked/elevated_session.dart';
 import 'package:immich_mobile/providers/server_info.provider.dart';
 import 'package:immich_mobile/providers/shared_link.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
@@ -67,8 +68,27 @@ class SharedLinkItem extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final thumbnailUrl = sharedLink.thumbAssetId != null ? getThumbnailUrlForRemoteId(sharedLink.thumbAssetId!) : null;
+    final isElevated = ref.watch(sharedLinksSessionElevatedProvider).value ?? false;
+    final isLocked = sharedLink.isLocked && !isElevated;
+    final thumbnailUrl = !isLocked && sharedLink.thumbAssetId != null
+        ? getThumbnailUrlForRemoteId(sharedLink.thumbAssetId!)
+        : null;
     final imageSize = math.min(context.width / 4, 100.0);
+
+    Future<void> unlock() async {
+      if (!await ensureElevatedSession(context, ref)) {
+        return;
+      }
+      ref.invalidate(sharedLinksSessionElevatedProvider);
+      await ref.read(sharedLinksStateProvider.notifier).fetchLinks();
+    }
+
+    Future<void> openLink() async {
+      if (isLocked) {
+        return unlock();
+      }
+      await context.pushRoute(SharedLinkEditRoute(existingLink: sharedLink));
+    }
 
     Future<void> copyShareLinkToClipboard() async {
       final externalDomain = ref.read(serverInfoProvider.select((s) => s.serverConfig.externalDomain));
@@ -104,7 +124,13 @@ class SharedLinkItem extends ConsumerWidget {
       return SizedBox(
         height: imageSize * 1.2,
         width: imageSize,
-        child: thumbnailUrl == null
+        child: isLocked
+            ? Card(
+                key: const ValueKey('shared-link-locked-cover'),
+                shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
+                child: Icon(Icons.lock_outline, semanticLabel: context.t.locked_album),
+              )
+            : thumbnailUrl == null
             ? const Card(
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(10))),
                 child: Icon(Icons.image_not_supported_outlined),
@@ -114,7 +140,7 @@ class SharedLinkItem extends ConsumerWidget {
                 key: key,
                 textInfo: '',
                 noImageIcon: Icons.image_not_supported_outlined,
-                onTap: () => context.pushRoute(SharedLinkEditRoute(existingLink: sharedLink)),
+                onTap: openLink,
               ),
       );
     }
@@ -156,6 +182,15 @@ class SharedLinkItem extends ConsumerWidget {
             Text(sharedLink.description!, overflow: TextOverflow.ellipsis),
           buildExpiryDuration(context),
           buildShareParameterInfos(),
+          if (isLocked)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: FilledButton.tonalIcon(
+                onPressed: unlock,
+                icon: const Icon(Icons.lock_open_outlined, size: 16),
+                label: Text(context.t.unlock),
+              ),
+            ),
         ],
       );
     }
@@ -187,7 +222,7 @@ class SharedLinkItem extends ConsumerWidget {
         return false;
       },
       child: InkWell(
-        onTap: () => context.pushRoute(SharedLinkEditRoute(existingLink: sharedLink)),
+        onTap: openLink,
         onLongPress: copyShareLinkToClipboard,
         child: Padding(
           padding: const EdgeInsets.all(12),

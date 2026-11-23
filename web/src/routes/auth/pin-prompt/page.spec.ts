@@ -67,3 +67,17 @@ test('cancels back to photos', async ({ data, router, render, app }) => {
 
   expect(router.url.pathname).toBe(Route.photos());
 });
+
+test('asks for the PIN code to access the trash when continuing to the trash', async ({
+  data,
+  router,
+  render,
+  app,
+}) => {
+  data.setAuthStatus({ pinCode: true });
+  await router.goto(Route.pinPrompt({ continue: Route.trash() }));
+  await render(Page, load);
+
+  await expect.element(app.auth.text('enter_your_pin_code_trash_subtitle')).toBeVisible();
+  await expect.element(app.auth.text('enter_your_pin_code_subtitle')).not.toBeInTheDocument();
+});

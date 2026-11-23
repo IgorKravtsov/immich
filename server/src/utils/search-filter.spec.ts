@@ -2,7 +2,12 @@ import { UnauthorizedException } from '@nestjs/common';
 import { describe, expect, it } from 'vitest';
 import { SearchFilter, isAlbumConfined, isFullyAlbumConfined } from 'src/dtos/search.dto.js';
 import { AssetVisibility } from 'src/enum.js';
-import { applyLockedVisibilityPolicy, collectFilterIds } from 'src/utils/search-filter.js';
+import {
+  applyLockedVisibilityPolicy,
+  applyTrashedVisibilityPolicy,
+  collectFilterIds,
+  requireElevatedPermissionForTrash,
+} from 'src/utils/search-filter.js';
 import { AuthFactory } from 'test/factories/auth.factory.js';
 
 const elevatedAuth = () => AuthFactory.from().session({ hasElevatedPermission: true }).build();
@@ -59,6 +64,60 @@ describe(applyLockedVisibilityPolicy.name, () => {
 
     const branched = { or: [{ isFavorite: { eq: true } }, { visibility: { eq: AssetVisibility.Timeline } }] };
     expect(applyLockedVisibilityPolicy(unelevatedAuth(), branched).visibility).toEqual({ ne: AssetVisibility.Locked });
+  });
+});
+
+describe(applyTrashedVisibilityPolicy.name, () => {
+  it('should let an elevated session query trashed assets', () => {
+    const filter = { trashedAt: { ne: null } };
+    expect(applyTrashedVisibilityPolicy(elevatedAuth(), filter)).toBe(filter);
+  });
+
+  it('should reject an unelevated session when the trash condition can match trashed assets', () => {
+    const trashDate = new Date('2026-01-01');
+    for (const trashedAt of [{ ne: null }, { eq: trashDate }, { gte: trashDate }, { lt: trashDate }]) {
+      expect(() => applyTrashedVisibilityPolicy(unelevatedAuth(), { trashedAt })).toThrow(UnauthorizedException);
+    }
+  });
+
+  it('should keep a filter whose top-level trash condition excludes trashed assets', () => {
+    const filter = { trashedAt: { eq: null }, or: [{ trashedAt: { ne: null } }] };
+    expect(applyTrashedVisibilityPolicy(unelevatedAuth(), filter)).toBe(filter);
+  });
+
+  it('should reject a branch that can match trashed assets when the top level has no trash condition', () => {
+    const filter = { or: [{ city: { eq: 'Oslo' } }, { trashedAt: { ne: null } }] };
+    expect(() => applyTrashedVisibilityPolicy(unelevatedAuth(), filter)).toThrow(UnauthorizedException);
+  });
+
+  it('should otherwise inject trashedAt = null without mutating the input', () => {
+    const filter: SearchFilter = { city: { eq: 'Oslo' } };
+    expect(applyTrashedVisibilityPolicy(unelevatedAuth(), filter)).toEqual({
+      city: { eq: 'Oslo' },
+      trashedAt: { eq: null },
+    });
+    expect(filter.trashedAt).toBeUndefined();
+  });
+});
+
+describe(requireElevatedPermissionForTrash.name, () => {
+  it('should reject an unelevated session asking for trashed or offline assets', () => {
+    const trashDate = new Date('2026-01-01');
+    for (const options of [
+      { withDeleted: true },
+      { trashedBefore: trashDate },
+      { trashedAfter: trashDate },
+      { isOffline: true },
+    ]) {
+      expect(() => requireElevatedPermissionForTrash(unelevatedAuth(), options)).toThrow(UnauthorizedException);
+      expect(() => requireElevatedPermissionForTrash(elevatedAuth(), options)).not.toThrow();
+    }
+  });
+
+  it('should allow searches that exclude trashed assets', () => {
+    expect(() =>
+      requireElevatedPermissionForTrash(unelevatedAuth(), { withDeleted: false, isOffline: false }),
+    ).not.toThrow();
   });
 });
 

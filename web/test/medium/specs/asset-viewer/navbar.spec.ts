@@ -86,6 +86,7 @@ test.describe('asset viewer navbar for the owner', () => {
   });
 
   test('shows permanently delete for a trashed asset opened from /trash', async ({ page, data, app }) => {
+    data.setAuthStatus({ pinCode: true, isElevated: true });
     const asset = factory.asset({ isTrashed: true });
     data.addAssets(asset);
     await page.goto(Route.trash());

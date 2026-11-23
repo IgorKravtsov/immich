@@ -56,6 +56,39 @@ export const applyLockedVisibilityPolicy = (auth: AuthDto, filter: SearchFilter)
   return { ...filter, visibility: { ne: AssetVisibility.Locked } };
 };
 
+const trashedAtExcludesTrashed = (condition: NonNullable<SearchFilterBranch['trashedAt']>) => condition.eq === null;
+
+/**
+Keeps trashed assets out of search results unless the session is elevated: a filter that can match
+them is rejected with 401, and a filter without a trash condition gets `trashedAt = null` ANDed in.
+*/
+export const applyTrashedVisibilityPolicy = (auth: AuthDto, filter: SearchFilter): SearchFilter => {
+  if (auth.session?.hasElevatedPermission) {
+    return filter;
+  }
+
+  const conditions =
+    filter.trashedAt === undefined ? filterBranches(filter).map((branch) => branch.trashedAt) : [filter.trashedAt];
+  const asksForTrash = conditions.some((condition) => condition !== undefined && !trashedAtExcludesTrashed(condition));
+  if (asksForTrash) {
+    requireElevatedPermission(auth);
+  }
+
+  if (filter.trashedAt !== undefined) {
+    return filter;
+  }
+
+  return { ...filter, trashedAt: { eq: null } };
+};
+
+type LegacyTrashOptions = { withDeleted?: boolean; trashedBefore?: Date; trashedAfter?: Date; isOffline?: boolean };
+
+export const requireElevatedPermissionForTrash = (auth: AuthDto, options: LegacyTrashOptions) => {
+  if (options.withDeleted || options.trashedBefore || options.trashedAfter || options.isOffline) {
+    requireElevatedPermission(auth);
+  }
+};
+
 export const collectFilterIds = (filter: SearchFilter, field: IdsFilterField): string[] => {
   const ids = new Set<string>();
 

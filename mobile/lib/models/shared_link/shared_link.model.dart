@@ -21,10 +21,12 @@ abstract class SharedLink with _$SharedLink {
     required bool showMetadata,
     required SharedLinkSource type,
     required String? slug,
+    @Default(false) bool isLocked,
   }) = _SharedLink;
 
   factory SharedLink.fromDto(SharedLinkResponseDto dto) {
     final isAlbum = dto.type == SharedLinkType.ALBUM;
+    final album = isAlbum ? dto.album.orElse(null) : null;
     return SharedLink(
       id: dto.id,
       allowDownload: dto.allowDownload,
@@ -36,9 +38,10 @@ abstract class SharedLink with _$SharedLink {
       showMetadata: dto.showMetadata,
       slug: dto.slug,
       type: isAlbum ? SharedLinkSource.album : SharedLinkSource.individual,
-      title: isAlbum ? dto.album.orElse(null)?.albumName.toUpperCase() ?? "UNKNOWN SHARE" : "INDIVIDUAL SHARE",
+      title: isAlbum ? album?.albumName.toUpperCase() ?? "UNKNOWN SHARE" : "INDIVIDUAL SHARE",
+      isLocked: album?.isLocked ?? false,
       thumbAssetId: isAlbum
-          ? dto.album.orElse(null)?.albumThumbnailAssetId
+          ? album?.albumThumbnailAssetId
           : dto.assets.isNotEmpty
           ? dto.assets[0].id
           : null,

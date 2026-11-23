@@ -12,10 +12,13 @@ export const load = (async ({ url }) => {
 
   const $t = await getFormatter();
 
+  const continueUrl = Route.continue(url.searchParams.get('continue'), Route.locked());
+
   return {
     meta: {
       title: $t('pin_verification'),
     },
-    continueUrl: Route.continue(url.searchParams.get('continue'), Route.locked()),
+    continueUrl,
+    isTrash: new URL(continueUrl, url.origin).pathname.startsWith(Route.trash()),
   };
 }) satisfies PageLoad;

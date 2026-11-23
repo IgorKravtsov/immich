@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/extensions/asyncvalue_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/models/shared_link/shared_link.model.dart';
+import 'package:immich_mobile/providers/auth.provider.dart';
 import 'package:immich_mobile/providers/shared_link.provider.dart';
 import 'package:immich_mobile/widgets/shared_link/shared_link_item.dart';
 
@@ -28,6 +29,24 @@ class SharedLinkPage extends HookConsumerWidget {
       };
     }, []);
 
+    useOnAppLifecycleStateChange((_, state) {
+      if (state != AppLifecycleState.paused || !(ref.read(sharedLinksSessionElevatedProvider).value ?? false)) {
+        return;
+      }
+      unawaited(
+        ref.read(authProvider.notifier).lockPinCode().then((_) {
+          if (context.mounted) {
+            ref.invalidate(sharedLinksSessionElevatedProvider);
+          }
+        }),
+      );
+    });
+
+    Future<void> refresh() async {
+      ref.invalidate(sharedLinksSessionElevatedProvider);
+      await ref.read(sharedLinksStateProvider.notifier).fetchLinks();
+    }
+
     Widget buildNoShares() {
       return Center(
         child: Column(
@@ -47,6 +66,7 @@ class SharedLinkPage extends HookConsumerWidget {
         builder: (context, constraints) => constraints.maxWidth > 600
             ? GridView.builder(
                 key: const PageStorageKey('shared-links-grid'),
+                physics: const AlwaysScrollableScrollPhysics(),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
                   mainAxisExtent: 180,
@@ -59,6 +79,7 @@ class SharedLinkPage extends HookConsumerWidget {
               )
             : ListView.separated(
                 key: const PageStorageKey('shared-links-list'),
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 itemCount: links.length,
                 itemBuilder: (context, index) => SharedLinkItem(links[index]),
@@ -72,7 +93,8 @@ class SharedLinkPage extends HookConsumerWidget {
       body: SafeArea(
         child: sharedLinks.widgetWhen(
           onError: (error, stackTrace) => buildNoShares(),
-          onData: (links) => links.isNotEmpty ? buildSharesList(links) : buildNoShares(),
+          onData: (links) =>
+              links.isNotEmpty ? RefreshIndicator(onRefresh: refresh, child: buildSharesList(links)) : buildNoShares(),
         ),
       ),
     );

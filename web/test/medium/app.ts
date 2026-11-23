@@ -215,6 +215,7 @@ export const createApp = (page: Page, data: MockData) => {
       card,
       deleteButton: labelled('delete_link'),
       cover: (link: { key: string }) => card(link).getByTestId('album-image'),
+      lockedCard: (albumName: string) => page.getByRole('button', { name: new RegExp(albumName) }),
       brokenCover: (link: { key: string }) => card(link).getByTestId('broken-asset'),
       form: {
         showMetadataSwitch: page.getByRole('dialog').getByLabel('show_metadata', { exact: true }),

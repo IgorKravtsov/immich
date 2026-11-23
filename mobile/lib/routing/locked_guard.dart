@@ -29,9 +29,11 @@ class LockedGuard extends AutoRouteGuard {
       return;
     }
 
+    final successRoute = resolver.route.toPageRouteInfo();
+
     /// Check if a pincode has been created but this user. Show the form to create if not exist
     if (!authStatus.pinCode) {
-      unawaited(router.push(PinAuthRoute(createPinCode: true)));
+      unawaited(router.push(PinAuthRoute(createPinCode: true, successRoute: successRoute)));
     }
 
     if (authStatus.isElevated) {
@@ -43,7 +45,7 @@ class LockedGuard extends AutoRouteGuard {
     /// the user has enabled the biometric authentication
     final securePinCode = await _secureStorageService.read(kSecuredPinCode);
     if (securePinCode == null) {
-      unawaited(router.push(PinAuthRoute()));
+      unawaited(router.push(PinAuthRoute(successRoute: successRoute)));
       return;
     }
 
@@ -72,7 +74,7 @@ class LockedGuard extends AutoRouteGuard {
     } on ApiException {
       // PIN code has changed, need to re-enter to access
       await _secureStorageService.delete(kSecuredPinCode);
-      unawaited(router.push(PinAuthRoute()));
+      unawaited(router.push(PinAuthRoute(successRoute: successRoute)));
     } catch (error) {
       _log.severe("Failed to access locked page", error);
       resolver.next(false);
