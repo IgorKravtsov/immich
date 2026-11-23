@@ -29,7 +29,12 @@ import { requireElevatedPermission } from 'src/utils/access.js';
 import { getMyPartnerIds } from 'src/utils/asset.util.js';
 import { isSmartSearchEnabled } from 'src/utils/misc.js';
 import { decodeSearchCursor, encodeSearchCursor } from 'src/utils/search-cursor.js';
-import { applyLockedVisibilityPolicy, collectFilterIds } from 'src/utils/search-filter.js';
+import {
+  applyLockedVisibilityPolicy,
+  applyTrashedVisibilityPolicy,
+  collectFilterIds,
+  requireElevatedPermissionForTrash,
+} from 'src/utils/search-filter.js';
 
 @Injectable()
 export class SearchService extends BaseService {
@@ -79,6 +84,7 @@ export class SearchService extends BaseService {
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
     }
+    requireElevatedPermissionForTrash(auth, dto);
 
     let checksum: Buffer | undefined;
     if (dto.checksum) {
@@ -122,6 +128,7 @@ export class SearchService extends BaseService {
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
     }
+    requireElevatedPermissionForTrash(auth, dto);
 
     return await this.searchRepository.searchStatistics({
       ...dto,
@@ -139,6 +146,7 @@ export class SearchService extends BaseService {
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
     }
+    requireElevatedPermissionForTrash(auth, dto);
 
     const userIds = await this.getUserIdsToSearch(auth, dto.visibility);
     const items = await this.searchRepository.searchRandom(dto.size, {
@@ -154,6 +162,7 @@ export class SearchService extends BaseService {
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
     }
+    requireElevatedPermissionForTrash(auth, dto);
 
     const userIds = await this.getUserIdsToSearch(auth, dto.visibility);
     const items = await this.searchRepository.searchLargeAssets(dto.size, {
@@ -173,6 +182,7 @@ export class SearchService extends BaseService {
     if (dto.visibility === AssetVisibility.Locked) {
       requireElevatedPermission(auth);
     }
+    requireElevatedPermissionForTrash(auth, dto);
 
     const { machineLearning } = await this.getConfig({ withCache: false });
     if (!isSmartSearchEnabled(machineLearning)) {
@@ -304,7 +314,7 @@ export class SearchService extends BaseService {
     dto: { filter?: SearchFilter },
   ): Promise<{ filter: SearchFilter; scope: AssetSearchScope }> {
     const filter = dto.filter ?? {};
-    const effectiveFilter = applyLockedVisibilityPolicy(auth, filter);
+    const effectiveFilter = applyTrashedVisibilityPolicy(auth, applyLockedVisibilityPolicy(auth, filter));
 
     const fullyConfined = isFullyAlbumConfined(filter);
     // a shared link visitor does not have a universe, so there every branch must be confined

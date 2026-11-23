@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { JobName, JobStatus } from 'src/enum.js';
 import { Resource } from 'src/resource-paths.js';
 import { TrashService } from 'src/services/trash.service.js';
@@ -23,6 +23,8 @@ async function* makeAssetIdStream(count: number): AsyncIterableIterator<{ id: st
     yield { id: `asset-${i + 1}` };
   }
 }
+
+const elevatedAuth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
 
 describe(TrashService.name, () => {
   let sut: TrashService;
@@ -76,16 +78,21 @@ describe(TrashService.name, () => {
   });
 
   describe('restore', () => {
+    it('should require an elevated session', async () => {
+      await expect(sut.restore(authStub.user1)).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mocks.trash.restore).not.toHaveBeenCalled();
+    });
+
     it('should handle an empty trash', async () => {
       mocks.trash.getDeletedIds.mockResolvedValue(makeAssetIdStream(0));
       mocks.trash.restore.mockResolvedValue(0);
-      await expect(sut.restore(authStub.user1)).resolves.toEqual({ count: 0 });
-      expect(mocks.trash.restore).toHaveBeenCalledWith('user-id');
+      await expect(sut.restore(elevatedAuth)).resolves.toEqual({ count: 0 });
+      expect(mocks.trash.restore).toHaveBeenCalledWith(elevatedAuth.user.id);
       expect(mocks.resource.send).not.toHaveBeenCalled();
     });
 
     it('should tell the owner about the restored assets', async () => {
-      const auth = AuthFactory.create();
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
       mocks.trash.restore.mockResolvedValue(2);
 
       await sut.restore(auth);
@@ -96,22 +103,28 @@ describe(TrashService.name, () => {
     it('should restore', async () => {
       mocks.trash.getDeletedIds.mockResolvedValue(makeAssetIdStream(1));
       mocks.trash.restore.mockResolvedValue(1);
-      await expect(sut.restore(authStub.user1)).resolves.toEqual({ count: 1 });
-      expect(mocks.trash.restore).toHaveBeenCalledWith('user-id');
+      await expect(sut.restore(elevatedAuth)).resolves.toEqual({ count: 1 });
+      expect(mocks.trash.restore).toHaveBeenCalledWith(elevatedAuth.user.id);
     });
   });
 
   describe('empty', () => {
+    it('should require an elevated session', async () => {
+      await expect(sut.empty(authStub.user1)).rejects.toBeInstanceOf(UnauthorizedException);
+      expect(mocks.trash.empty).not.toHaveBeenCalled();
+      expect(mocks.job.queue).not.toHaveBeenCalled();
+    });
+
     it('should handle an empty trash', async () => {
       mocks.trash.getDeletedIds.mockResolvedValue(makeAssetIdStream(0));
       mocks.trash.empty.mockResolvedValue(0);
-      await expect(sut.empty(authStub.user1)).resolves.toEqual({ count: 0 });
+      await expect(sut.empty(elevatedAuth)).resolves.toEqual({ count: 0 });
       expect(mocks.job.queue).not.toHaveBeenCalled();
       expect(mocks.resource.send).not.toHaveBeenCalled();
     });
 
     it('should tell the owner about the emptied trash', async () => {
-      const auth = AuthFactory.create();
+      const auth = AuthFactory.from().session({ hasElevatedPermission: true }).build();
       mocks.trash.empty.mockResolvedValue(2);
 
       await sut.empty(auth);
@@ -122,8 +135,8 @@ describe(TrashService.name, () => {
     it('should empty the trash', async () => {
       mocks.trash.getDeletedIds.mockResolvedValue(makeAssetIdStream(1));
       mocks.trash.empty.mockResolvedValue(1);
-      await expect(sut.empty(authStub.user1)).resolves.toEqual({ count: 1 });
-      expect(mocks.trash.empty).toHaveBeenCalledWith('user-id');
+      await expect(sut.empty(elevatedAuth)).resolves.toEqual({ count: 1 });
+      expect(mocks.trash.empty).toHaveBeenCalledWith(elevatedAuth.user.id);
       expect(mocks.job.queue).toHaveBeenCalledWith({ name: JobName.AssetEmptyTrash, data: {} });
     });
   });

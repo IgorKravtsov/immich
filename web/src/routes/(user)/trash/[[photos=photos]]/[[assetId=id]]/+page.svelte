@@ -1,5 +1,6 @@
 <script lang="ts">
   import empty3Url from '#lib/assets/empty-3.svg';
+  import OnEvents from '#lib/components/OnEvents.svelte';
   import UserPageLayout from '#lib/components/layouts/UserPageLayout.svelte';
   import EmptyPlaceholder from '#lib/components/shared-components/EmptyPlaceholder.svelte';
   import AssetSelectControlBar from '#lib/components/timeline/AssetSelectControlBar.svelte';
@@ -12,6 +13,7 @@
   import { getUserConfigQuery } from '#lib/queries/config-user.query.ts';
   import { Route } from '#lib/route.ts';
   import { getTrashActions } from '#lib/services/trash.service.ts';
+  import { getUserActions } from '#lib/services/user.service.ts';
   import { handlePromiseError } from '#lib/utils.ts';
   import { t } from 'svelte-i18n';
   import { goto } from '$app/navigation';
@@ -44,12 +46,19 @@
   };
 
   const { Empty, RestoreAll } = $derived(getTrashActions($t, timelineManager?.assetCount ?? 0));
+  const { LockSession } = $derived(getUserActions($t));
+
+  const onSessionLocked = async () => {
+    await goto(Route.photos());
+  };
 </script>
+
+<OnEvents {onSessionLocked} />
 
 {#if config.trash.enabled}
   <UserPageLayout
     hideNavbar={assetMultiSelectManager.selectionActive}
-    actions={assetMultiSelectManager.selectionActive ? [] : [Empty, RestoreAll]}
+    actions={assetMultiSelectManager.selectionActive ? [] : [Empty, RestoreAll, LockSession]}
     title={data.meta.title}
     scrollbar={false}
   >

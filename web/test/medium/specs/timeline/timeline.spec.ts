@@ -447,6 +447,7 @@ test.describe('timeline', () => {
 
   test.describe('/trash', () => {
     test('trash from /photos, restore from /trash', async ({ page, data, api, app }) => {
+      data.setAuthStatus({ pinCode: true, isElevated: true });
       const [asset, next] = data.addTimeline({ years: 1 });
       await page.goto(Route.photos());
       const position = await app.timeline.position(asset);
@@ -470,6 +471,7 @@ test.describe('timeline', () => {
     });
 
     test('trash from album, restore from /trash', async ({ page, data, api, app }) => {
+      data.setAuthStatus({ pinCode: true, isElevated: true });
       data.addTimeline({ years: 2 });
       const [asset] = data.sampleAssets(20);
       const album = factory.album();

@@ -164,7 +164,7 @@ class AppRouter extends RootStackRouter {
     ),
     AutoRoute(page: MemoryRoute.page, guards: [_authGuard, _duplicateGuard]),
     AutoRoute(page: FavoriteRoute.page, guards: [_authGuard, _duplicateGuard]),
-    AutoRoute(page: TrashRoute.page, guards: [_authGuard, _duplicateGuard]),
+    AutoRoute(page: TrashRoute.page, guards: [_authGuard, _lockedGuard, _duplicateGuard]),
     AutoRoute(page: ArchiveRoute.page, guards: [_authGuard, _duplicateGuard]),
     AutoRoute(page: LockedFolderRoute.page, guards: [_authGuard, _lockedGuard, _duplicateGuard]),
     AutoRoute(page: LockedAlbumRoute.page, guards: [_authGuard, _lockedGuard]),

@@ -231,7 +231,11 @@ describe(TimelineService.name, () => {
         { isFavorite: false },
       ]) {
         await expect(
-          sut.getTimeBucket(authStub.admin, { timeBucket: 'bucket', userId: 'partner-id', ...dto }),
+          sut.getTimeBucket(authStub.adminWithElevatedPermission, {
+            timeBucket: 'bucket',
+            userId: 'partner-id',
+            ...dto,
+          }),
         ).rejects.toThrow(BadRequestException);
       }
 
@@ -311,9 +315,27 @@ describe(TimelineService.name, () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('should require an elevated session for trashed assets', async () => {
+      await expect(sut.getTimeBuckets(authStub.admin, { isTrashed: true })).rejects.toThrow(UnauthorizedException);
+      await expect(sut.getTimeBucket(authStub.admin, { timeBucket: 'bucket', isTrashed: true })).rejects.toThrow(
+        UnauthorizedException,
+      );
+      expect(mocks.asset.getTimeBuckets).not.toHaveBeenCalled();
+      expect(mocks.asset.getTimeBucket).not.toHaveBeenCalled();
+    });
+
+    it('should return trashed assets to an elevated session', async () => {
+      const json = `[{ id: ['asset-id'] }]`;
+      mocks.asset.getTimeBucket.mockResolvedValue({ assets: json });
+
+      await expect(
+        sut.getTimeBucket(authStub.adminWithElevatedPermission, { timeBucket: 'bucket', isTrashed: true }),
+      ).resolves.toEqual(json);
+    });
+
     it('should throw an error if withParners is true and isTrash is true', async () => {
       await expect(
-        sut.getTimeBucket(authStub.admin, {
+        sut.getTimeBucket(authStub.adminWithElevatedPermission, {
           timeBucket: 'bucket',
           isTrashed: true,
           withPartners: true,

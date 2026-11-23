@@ -4,7 +4,9 @@ import {
   AssetVisibility,
   deleteAssets,
   LoginResponseDto,
+  setupPinCode,
   SharedLinkType,
+  unlockAuthSession,
   updateAsset,
 } from '@immich/sdk';
 import { DateTime } from 'luxon';
@@ -43,6 +45,8 @@ describe('/search', () => {
   beforeAll(async () => {
     await utils.resetDatabase();
     admin = await utils.adminSetup();
+    await setupPinCode({ pinCodeSetupDto: { pinCode: '123456' } }, { headers: asBearerAuth(admin.accessToken) });
+    await unlockAuthSession({ sessionUnlockDto: { pinCode: '123456' } }, { headers: asBearerAuth(admin.accessToken) });
     websocket = await utils.connectWebsocket(admin.accessToken);
 
     const files = [

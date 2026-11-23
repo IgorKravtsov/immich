@@ -7,6 +7,7 @@ import { TrashResponseDto } from 'src/dtos/trash.dto.js';
 import { JobName, JobStatus, Permission, QueueName } from 'src/enum.js';
 import { Resource } from 'src/resource-paths.js';
 import { BaseService } from 'src/services/base.service.js';
+import { requireElevatedPermission } from 'src/utils/access.js';
 import { batched } from 'src/utils/misc.js';
 
 @Injectable()
@@ -34,6 +35,7 @@ export class TrashService extends BaseService {
   }
 
   async restore(auth: AuthDto): Promise<TrashResponseDto> {
+    requireElevatedPermission(auth);
     const count = await this.trashRepository.restore(auth.user.id);
     if (count > 0) {
       this.resourceRepository.send({
@@ -46,6 +48,7 @@ export class TrashService extends BaseService {
   }
 
   async empty(auth: AuthDto): Promise<TrashResponseDto> {
+    requireElevatedPermission(auth);
     const count = await this.trashRepository.empty(auth.user.id);
     if (count > 0) {
       this.resourceRepository.send({ userIds: [auth.user.id], changed: [Resource.assets()] });

@@ -1003,6 +1003,7 @@
   "enter_wifi_name": "Enter Wi-Fi name",
   "enter_your_pin_code": "Enter your PIN code",
   "enter_your_pin_code_subtitle": "Enter your PIN code to access the locked folder",
+  "enter_your_pin_code_trash_subtitle": "Enter your PIN code to access the trash",
   "error": "Error",
   "error_delete_face": "Error deleting face from asset",
   "error_loading_albums": "Error loading albums",
