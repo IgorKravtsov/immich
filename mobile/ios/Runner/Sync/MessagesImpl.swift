@@ -176,11 +176,11 @@ class NativeSyncApiImpl: ImmichPlugin, NativeSyncApi, FlutterPlugin {
       
       if (updated.isEmpty) { continue }
       
-      let options = PHFetchOptions()
-      options.includeHiddenAssets = false
-      let result = PHAsset.fetchAssets(withLocalIdentifiers: Array(updated), options: options)
+      let result = fetchLibraryAssets(withLocalIdentifiers: updated)
+      var missingAssets = updated
       for i in 0..<result.count {
         let asset = result.object(at: i)
+        missingAssets.remove(asset.localIdentifier)
         
         // Asset wrapper only uses the id for comparison. Multiple change can contain the same asset, skip duplicate changes
         let predicate = PlatformAsset(
@@ -199,12 +199,22 @@ class NativeSyncApiImpl: ImmichPlugin, NativeSyncApi, FlutterPlugin {
         let domainAsset = AssetWrapper(with: asset.toPlatformAsset())
         updatedAssets.insert(domainAsset)
       }
+      deletedAssets.formUnion(missingAssets)
     }
     
     let updates = Array(updatedAssets.map { $0.asset })
     return SyncDelta(hasChanges: true, updates: updates, deletes: Array(deletedAssets), assetAlbums: buildAssetAlbumsMap(assets: updates))
   }
   
+  private func fetchLibraryAssets(withLocalIdentifiers ids: Set<String>) -> PHFetchResult<PHAsset> {
+    let options = PHFetchOptions()
+    options.includeHiddenAssets = false
+    options.includeAllBurstAssets = true
+    options.includeAssetSourceTypes = [.typeUserLibrary, .typeCloudShared, .typeiTunesSynced]
+    options.predicate = NSPredicate(format: "localIdentifier IN %@", Array(ids))
+    return PHAsset.fetchAssets(with: options)
+  }
+
   private func buildAssetAlbumsMap(assets: Array<PlatformAsset>) -> [String: [String]] {
     guard !assets.isEmpty else {
       return [:]
