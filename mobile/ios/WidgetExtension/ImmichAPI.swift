@@ -2,7 +2,11 @@ import Foundation
 import SwiftUI
 import WidgetKit
 
-let IMMICH_SHARE_GROUP = Bundle.main.object(forInfoDictionaryKey: "AppGroupId") as! String
+let IMMICH_SHARE_GROUP: String = {
+  let configured = Bundle.main.object(forInfoDictionaryKey: "AppGroupId") as! String
+  let sideloaded = Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String]
+  return sideloaded?.first { $0.hasPrefix(configured) } ?? configured
+}()
 
 enum WidgetError: Error, Codable {
   case noLogin
